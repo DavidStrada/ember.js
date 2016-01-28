@@ -1,16 +1,7 @@
-import Ember from "ember-metal/core";
-import {
-  defineProperty as o_defineProperty,
-  canDefineNonEnumerableProperties,
-  hasPropertyAccessors,
-  create
-} from "ember-metal/platform";
+'no use strict';
+// Remove "use strict"; from transpiled module until
+// https://bugs.webkit.org/show_bug.cgi?id=138038 is fixed
 
-import {
-  forEach
-} from "ember-metal/array";
-
-import keys from "ember-metal/keys";
 /**
 @module ember-metal
 */
@@ -27,8 +18,7 @@ var _uuid = 0;
 /**
   Generates a universally unique identifier. This method
   is used internally by Ember for assisting with
-  the generation of GUID's and other unique identifiers
-  such as `bind-attr` data attributes.
+  the generation of GUID's and other unique identifiers.
 
   @public
   @return {Number} [description]
@@ -47,7 +37,6 @@ export function uuid() {
 */
 var GUID_PREFIX = 'ember';
 
-var o_create = create;
 // Used for guid generation...
 var numberCache  = [];
 var stringCache  = {};
@@ -69,17 +58,17 @@ var stringCache  = {};
   manipulation like splitting.
 
   Unfortunately checking equality of different ropes can be quite costly as
-  runtimes must resort to clever string comparison algorithims. These
-  algorithims typically cost in proportion to the length of the string.
+  runtimes must resort to clever string comparison algorithms. These
+  algorithms typically cost in proportion to the length of the string.
   Luckily, this is where the Symbols (interned strings) shine. As Symbols are
   unique by their string content, equality checks can be done by pointer
-  comparision.
+  comparison.
 
   How do I know if my string is a rope or symbol?
 
   Typically (warning general sweeping statement, but truthy in runtimes at
   present) static strings created as part of the JS source are interned.
-  Strings often used for comparisions can be interned at runtime if some
+  Strings often used for comparisons can be interned at runtime if some
   criteria are met.  One of these criteria can be the size of the entire rope.
   For example, in chrome 38 a rope longer then 12 characters will not
   intern, nor will segments of that rope.
@@ -91,10 +80,15 @@ var stringCache  = {};
   @private
   @return {String} interned version of the provided string
 */
-function intern(string) {
-  var obj = Object.create(null);
-  obj[string] = true;
-  return keys(obj)[0];
+export function intern(str) {
+  var obj = {};
+  obj[str] = 1;
+  for (var key in obj) {
+    if (key === str) {
+      return key;
+    }
+  }
+  return str;
 }
 
 /**
@@ -113,11 +107,23 @@ function intern(string) {
 */
 var GUID_KEY = intern('__ember' + (+ new Date()));
 
-var GUID_DESC = {
-  writable:    false,
-  configurable: false,
-  enumerable:  false,
+export var GUID_DESC = {
+  writable:     true,
+  configurable: true,
+  enumerable:   false,
   value: null
+};
+
+var nullDescriptor = {
+  configurable: true,
+  writable: true,
+  enumerable: false,
+  value: null
+};
+
+export var GUID_KEY_PROPERTY = {
+  name: GUID_KEY,
+  descriptor: nullDescriptor
 };
 
 /**
@@ -138,14 +144,21 @@ var GUID_DESC = {
   @return {String} the guid
 */
 export function generateGuid(obj, prefix) {
-  if (!prefix) prefix = GUID_PREFIX;
+  if (!prefix) {
+    prefix = GUID_PREFIX;
+  }
+
   var ret = (prefix + uuid());
   if (obj) {
     if (obj[GUID_KEY] === null) {
       obj[GUID_KEY] = ret;
     } else {
       GUID_DESC.value = ret;
-      o_defineProperty(obj, GUID_KEY, GUID_DESC);
+      if (obj.__defineNonEnumerable) {
+        obj.__defineNonEnumerable(GUID_KEY_PROPERTY);
+      } else {
+        Object.defineProperty(obj, GUID_KEY, GUID_DESC);
+      }
     }
   }
   return ret;
@@ -159,234 +172,104 @@ export function generateGuid(obj, prefix) {
 
   You can also use this method on DOM Element objects.
 
-  @private
+  @public
   @method guidFor
   @for Ember
   @param {Object} obj any object, string, number, Element, or primitive
   @return {String} the unique guid for this instance.
 */
 export function guidFor(obj) {
+  if (obj && obj[GUID_KEY]) {
+    return obj[GUID_KEY];
+  }
 
   // special cases where we don't want to add a key to object
-  if (obj === undefined) return "(undefined)";
-  if (obj === null) return "(null)";
+  if (obj === undefined) {
+    return '(undefined)';
+  }
+
+  if (obj === null) {
+    return '(null)';
+  }
 
   var ret;
   var type = typeof obj;
 
   // Don't allow prototype changes to String etc. to change the guidFor
-  switch(type) {
+  switch (type) {
     case 'number':
       ret = numberCache[obj];
-      if (!ret) ret = numberCache[obj] = 'nu'+obj;
+
+      if (!ret) {
+        ret = numberCache[obj] = 'nu' + obj;
+      }
+
       return ret;
 
     case 'string':
       ret = stringCache[obj];
-      if (!ret) ret = stringCache[obj] = 'st' + uuid();
+
+      if (!ret) {
+        ret = stringCache[obj] = 'st' + uuid();
+      }
+
       return ret;
 
     case 'boolean':
       return obj ? '(true)' : '(false)';
 
     default:
-      if (obj[GUID_KEY]) return obj[GUID_KEY];
-      if (obj === Object) return '(Object)';
-      if (obj === Array)  return '(Array)';
+      if (obj === Object) {
+        return '(Object)';
+      }
+
+      if (obj === Array) {
+        return '(Array)';
+      }
+
       ret = GUID_PREFIX + uuid();
 
       if (obj[GUID_KEY] === null) {
         obj[GUID_KEY] = ret;
       } else {
         GUID_DESC.value = ret;
-        o_defineProperty(obj, GUID_KEY, GUID_DESC);
+
+        if (obj.__defineNonEnumerable) {
+          obj.__defineNonEnumerable(GUID_KEY_PROPERTY);
+        } else {
+          Object.defineProperty(obj, GUID_KEY, GUID_DESC);
+        }
       }
       return ret;
   }
 }
 
-// ..........................................................
-// META
-//
+const HAS_SUPER_PATTERN = /\.(_super|call\(this|apply\(this)/;
 
-var META_DESC = {
-  writable: true,
-  configurable: false,
-  enumerable: false,
-  value: null
-};
+export const checkHasSuper = (function () {
+  let sourceAvailable = (function() {
+    return this;
+  }).toString().indexOf('return this') > -1;
 
-function Meta(obj) {
-  this.descs = {};
-  this.watching = {};
-  this.cache = {};
-  this.cacheMeta = {};
-  this.source = obj;
-}
-
-Meta.prototype = {
-  descs: null,
-  deps: null,
-  watching: null,
-  listeners: null,
-  cache: null,
-  cacheMeta: null,
-  source: null,
-  mixins: null,
-  bindings: null,
-  chains: null,
-  chainWatchers: null,
-  values: null,
-  proto: null
-};
-
-if (!canDefineNonEnumerableProperties) {
-  // on platforms that don't support enumerable false
-  // make meta fail jQuery.isPlainObject() to hide from
-  // jQuery.extend() by having a property that fails
-  // hasOwnProperty check.
-  Meta.prototype.__preventPlainObject__ = true;
-
-  // Without non-enumerable properties, meta objects will be output in JSON
-  // unless explicitly suppressed
-  Meta.prototype.toJSON = function () { };
-}
-
-// Placeholder for non-writable metas.
-var EMPTY_META = new Meta(null);
-
-if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-  if (hasPropertyAccessors) {
-    EMPTY_META.values = {};
-  }
-}
-
-/**
-  Retrieves the meta hash for an object. If `writable` is true ensures the
-  hash is writable for this object as well.
-
-  The meta object contains information about computed property descriptors as
-  well as any watched properties and other information. You generally will
-  not access this information directly but instead work with higher level
-  methods that manipulate this hash indirectly.
-
-  @method meta
-  @for Ember
-  @private
-
-  @param {Object} obj The object to retrieve meta for
-  @param {Boolean} [writable=true] Pass `false` if you do not intend to modify
-    the meta hash, allowing the method to avoid making an unnecessary copy.
-  @return {Object} the meta hash for an object
-*/
-function meta(obj, writable) {
-
-  var ret = obj['__ember_meta__'];
-  if (writable===false) return ret || EMPTY_META;
-
-  if (!ret) {
-    if (canDefineNonEnumerableProperties) o_defineProperty(obj, '__ember_meta__', META_DESC);
-
-    ret = new Meta(obj);
-
-    if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-      if (hasPropertyAccessors) {
-        ret.values = {};
-      }
-    }
-
-    obj['__ember_meta__'] = ret;
-
-    // make sure we don't accidentally try to create constructor like desc
-    ret.descs.constructor = null;
-
-  } else if (ret.source !== obj) {
-    if (canDefineNonEnumerableProperties) o_defineProperty(obj, '__ember_meta__', META_DESC);
-
-    ret = o_create(ret);
-    ret.descs     = o_create(ret.descs);
-    ret.watching  = o_create(ret.watching);
-    ret.cache     = {};
-    ret.cacheMeta = {};
-    ret.source    = obj;
-
-    if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-      if (hasPropertyAccessors) {
-        ret.values = o_create(ret.values);
-      }
-    }
-
-    obj['__ember_meta__'] = ret;
-  }
-  return ret;
-}
-
-export function getMeta(obj, property) {
-  var _meta = meta(obj, false);
-  return _meta[property];
-}
-
-export function setMeta(obj, property, value) {
-  var _meta = meta(obj, true);
-  _meta[property] = value;
-  return value;
-}
-
-/**
-  @deprecated
-  @private
-
-  In order to store defaults for a class, a prototype may need to create
-  a default meta object, which will be inherited by any objects instantiated
-  from the class's constructor.
-
-  However, the properties of that meta object are only shallow-cloned,
-  so if a property is a hash (like the event system's `listeners` hash),
-  it will by default be shared across all instances of that class.
-
-  This method allows extensions to deeply clone a series of nested hashes or
-  other complex objects. For instance, the event system might pass
-  `['listeners', 'foo:change', 'ember157']` to `prepareMetaPath`, which will
-  walk down the keys provided.
-
-  For each key, if the key does not exist, it is created. If it already
-  exists and it was inherited from its constructor, the constructor's
-  key is cloned.
-
-  You can also pass false for `writable`, which will simply return
-  undefined if `prepareMetaPath` discovers any part of the path that
-  shared or undefined.
-
-  @method metaPath
-  @for Ember
-  @param {Object} obj The object whose meta we are examining
-  @param {Array} path An array of keys to walk down
-  @param {Boolean} writable whether or not to create a new meta
-    (or meta property) if one does not already exist or if it's
-    shared with its constructor
-*/
-export function metaPath(obj, path, writable) {
-  Ember.deprecate("Ember.metaPath is deprecated and will be removed from future releases.");
-  var _meta = meta(obj, writable);
-  var keyName, value;
-
-  for (var i=0, l=path.length; i<l; i++) {
-    keyName = path[i];
-    value = _meta[keyName];
-
-    if (!value) {
-      if (!writable) { return undefined; }
-      value = _meta[keyName] = { __ember_source__: obj };
-    } else if (value.__ember_source__ !== obj) {
-      if (!writable) { return undefined; }
-      value = _meta[keyName] = o_create(value);
-      value.__ember_source__ = obj;
-    }
-
-    _meta = value;
+  if (sourceAvailable) {
+    return function checkHasSuper(func) {
+      return HAS_SUPER_PATTERN.test(func.toString());
+    };
   }
 
-  return value;
+  return function checkHasSuper() {
+    return true;
+  };
+}());
+
+function ROOT() {}
+ROOT.__hasSuper = false;
+
+function hasSuper(func) {
+  if (func.__hasSuper === undefined) {
+    func.__hasSuper = checkHasSuper(func);
+  }
+  return func.__hasSuper;
 }
 
 /**
@@ -402,106 +285,55 @@ export function metaPath(obj, path, writable) {
   @return {Function} wrapped function.
 */
 export function wrap(func, superFunc) {
+  if (!hasSuper(func)) {
+    return func;
+  }
+  // ensure an unwrapped super that calls _super is wrapped with a terminal _super
+  if (!superFunc.wrappedFunction && hasSuper(superFunc)) {
+    return _wrap(func, _wrap(superFunc, ROOT));
+  }
+  return _wrap(func, superFunc);
+}
+
+function _wrap(func, superFunc) {
   function superWrapper() {
-    var ret;
-    var sup  = this && this.__nextSuper;
-    var args = new Array(arguments.length);
-    for (var i = 0, l = args.length; i < l; i++) {
-      args[i] = arguments[i];
+    let orig = this._super;
+    let length = arguments.length;
+    let ret;
+    this._super = superFunc;
+    switch (length) {
+      case 0:  ret = func.call(this); break;
+      case 1:  ret = func.call(this, arguments[0]); break;
+      case 2:  ret = func.call(this, arguments[0], arguments[1]); break;
+      case 3:  ret = func.call(this, arguments[0], arguments[1], arguments[2]); break;
+      case 4:  ret = func.call(this, arguments[0], arguments[1], arguments[2], arguments[3]); break;
+      case 5:  ret = func.call(this, arguments[0], arguments[1], arguments[2], arguments[3], arguments[4]); break;
+      default:
+        // v8 bug potentially incorrectly deopts this function: https://code.google.com/p/v8/issues/detail?id=3709
+        // we may want to keep this around till this ages out on mobile
+        let args = new Array(length);
+        for (var x = 0; x < length; x++) {
+          args[x] = arguments[x];
+        }
+        ret = func.apply(this, args);
+        break;
     }
-    if(this) { this.__nextSuper = superFunc; }
-    ret = apply(this, func, args);
-    if(this) { this.__nextSuper = sup; }
+    this._super = orig;
     return ret;
   }
 
   superWrapper.wrappedFunction = func;
-  superWrapper.wrappedFunction.__ember_arity__ = func.length;
   superWrapper.__ember_observes__ = func.__ember_observes__;
-  superWrapper.__ember_observesBefore__ = func.__ember_observesBefore__;
   superWrapper.__ember_listens__ = func.__ember_listens__;
 
   return superWrapper;
-}
-
-var EmberArray;
-
-/**
-  Returns true if the passed object is an array or Array-like.
-
-  Ember Array Protocol:
-
-    - the object has an objectAt property
-    - the object is a native Array
-    - the object is an Object, and has a length property
-
-  Unlike `Ember.typeOf` this method returns true even if the passed object is
-  not formally array but appears to be array-like (i.e. implements `Ember.Array`)
-
-  ```javascript
-  Ember.isArray();                                          // false
-  Ember.isArray([]);                                        // true
-  Ember.isArray(Ember.ArrayProxy.create({ content: [] }));  // true
-  ```
-
-  @method isArray
-  @for Ember
-  @param {Object} obj The object to test
-  @return {Boolean} true if the passed object is an array or Array-like
-*/
-// ES6TODO: Move up to runtime? This is only use in ember-metal by concatenatedProperties
-function isArray(obj) {
-  var modulePath, type;
-
-  if (typeof EmberArray === "undefined") {
-    modulePath = 'ember-runtime/mixins/array';
-    if (Ember.__loader.registry[modulePath]) {
-      EmberArray = Ember.__loader.require(modulePath)['default'];
-    }
-  }
-
-  if (!obj || obj.setInterval) { return false; }
-  if (Array.isArray && Array.isArray(obj)) { return true; }
-  if (EmberArray && EmberArray.detect(obj)) { return true; }
-
-  type = typeOf(obj);
-  if ('array' === type) { return true; }
-  if ((obj.length !== undefined) && 'object' === type) { return true; }
-  return false;
-}
-
-/**
-  Forces the passed object to be part of an array. If the object is already
-  an array or array-like, returns the object. Otherwise adds the object to
-  an array. If obj is `null` or `undefined`, returns an empty array.
-
-  ```javascript
-  Ember.makeArray();            // []
-  Ember.makeArray(null);        // []
-  Ember.makeArray(undefined);   // []
-  Ember.makeArray('lindsay');   // ['lindsay']
-  Ember.makeArray([1, 2, 42]);  // [1, 2, 42]
-
-  var controller = Ember.ArrayProxy.create({ content: [] });
-
-  Ember.makeArray(controller) === controller;  // true
-  ```
-
-  @method makeArray
-  @for Ember
-  @param {Object} obj the object
-  @return {Array}
-*/
-export function makeArray(obj) {
-  if (obj === null || obj === undefined) { return []; }
-  return isArray(obj) ? obj : [obj];
 }
 
 /**
   Checks to see if the `methodName` exists on the `obj`.
 
   ```javascript
-  var foo = { bar: Ember.K, baz: null };
+  var foo = { bar: function() { return 'bar'; }, baz: null };
 
   Ember.canInvoke(foo, 'bar'); // true
   Ember.canInvoke(foo, 'baz'); // false
@@ -513,6 +345,7 @@ export function makeArray(obj) {
   @param {Object} obj The object to check for the method
   @param {String} methodName The method name to check for
   @return {Boolean}
+  @private
 */
 function canInvoke(obj, methodName) {
   return !!(obj && typeof obj[methodName] === 'function');
@@ -536,6 +369,7 @@ function canInvoke(obj, methodName) {
   @param {String} methodName The method name to check for
   @param {Array} [args] The arguments to pass to the method
   @return {*} the return value of the invoked method or undefined if it cannot be invoked
+  @public
 */
 export function tryInvoke(obj, methodName, args) {
   if (canInvoke(obj, methodName)) {
@@ -543,252 +377,38 @@ export function tryInvoke(obj, methodName, args) {
   }
 }
 
-// https://github.com/emberjs/ember.js/pull/1617
-var needsFinallyFix = (function() {
-  var count = 0;
-  try{
-    try { }
-    finally {
-      count++;
-      throw new Error('needsFinallyFixTest');
-    }
-  } catch (e) {}
-
-  return count !== 1;
-})();
-
-/**
-  Provides try/finally functionality, while working
-  around Safari's double finally bug.
-
-  ```javascript
-  var tryable = function() {
-    someResource.lock();
-    runCallback(); // May throw error.
-  };
-
-  var finalizer = function() {
-    someResource.unlock();
-  };
-
-  Ember.tryFinally(tryable, finalizer);
-  ```
-
-  @method tryFinally
-  @for Ember
-  @param {Function} tryable The function to run the try callback
-  @param {Function} finalizer The function to run the finally callback
-  @param {Object} [binding] The optional calling object. Defaults to 'this'
-  @return {*} The return value is the that of the finalizer,
-  unless that value is undefined, in which case it is the return value
-  of the tryable
-*/
-
-var tryFinally;
-if (needsFinallyFix) {
-  tryFinally = function(tryable, finalizer, binding) {
-    var result, finalResult, finalError;
-
-    binding = binding || this;
-
-    try {
-      result = tryable.call(binding);
-    } finally {
-      try {
-        finalResult = finalizer.call(binding);
-      } catch (e) {
-        finalError = e;
-      }
-    }
-
-    if (finalError) { throw finalError; }
-
-    return (finalResult === undefined) ? result : finalResult;
-  };
-} else {
-  tryFinally = function(tryable, finalizer, binding) {
-    var result, finalResult;
-
-    binding = binding || this;
-
-    try {
-      result = tryable.call(binding);
-    } finally {
-      finalResult = finalizer.call(binding);
-    }
-
-    return (finalResult === undefined) ? result : finalResult;
-  };
-}
-
-/**
-  Provides try/catch/finally functionality, while working
-  around Safari's double finally bug.
-
-  ```javascript
-  var tryable = function() {
-    for (i = 0, l = listeners.length; i < l; i++) {
-      listener = listeners[i];
-      beforeValues[i] = listener.before(name, time(), payload);
-    }
-
-    return callback.call(binding);
-  };
-
-  var catchable = function(e) {
-    payload = payload || {};
-    payload.exception = e;
-  };
-
-  var finalizer = function() {
-    for (i = 0, l = listeners.length; i < l; i++) {
-      listener = listeners[i];
-      listener.after(name, time(), payload, beforeValues[i]);
-    }
-  };
-
-  Ember.tryCatchFinally(tryable, catchable, finalizer);
-  ```
-
-  @method tryCatchFinally
-  @for Ember
-  @param {Function} tryable The function to run the try callback
-  @param {Function} catchable The function to run the catchable callback
-  @param {Function} finalizer The function to run the finally callback
-  @param {Object} [binding] The optional calling object. Defaults to 'this'
-  @return {*} The return value is the that of the finalizer,
-  unless that value is undefined, in which case it is the return value
-  of the tryable.
-*/
-var tryCatchFinally;
-if (needsFinallyFix) {
-  tryCatchFinally = function(tryable, catchable, finalizer, binding) {
-    var result, finalResult, finalError;
-
-    binding = binding || this;
-
-    try {
-      result = tryable.call(binding);
-    } catch(error) {
-      result = catchable.call(binding, error);
-    } finally {
-      try {
-        finalResult = finalizer.call(binding);
-      } catch (e) {
-        finalError = e;
-      }
-    }
-
-    if (finalError) { throw finalError; }
-
-    return (finalResult === undefined) ? result : finalResult;
-  };
-} else {
-  tryCatchFinally = function(tryable, catchable, finalizer, binding) {
-    var result, finalResult;
-
-    binding = binding || this;
-
-    try {
-      result = tryable.call(binding);
-    } catch(error) {
-      result = catchable.call(binding, error);
-    } finally {
-      finalResult = finalizer.call(binding);
-    }
-
-    return (finalResult === undefined) ? result : finalResult;
-  };
-}
-
 // ........................................
 // TYPING & ARRAY MESSAGING
 //
 
-var TYPE_MAP = {};
-var t = "Boolean Number String Function Array Date RegExp Object".split(" ");
-forEach.call(t, function(name) {
-  TYPE_MAP[ "[object " + name + "]" ] = name.toLowerCase();
-});
-
 var toString = Object.prototype.toString;
 
-var EmberObject;
-
 /**
-  Returns a consistent type for the passed item.
-
-  Use this instead of the built-in `typeof` to get the type of an item.
-  It will return the same result across all browsers and includes a bit
-  more detail. Here is what will be returned:
-
-      | Return Value  | Meaning                                              |
-      |---------------|------------------------------------------------------|
-      | 'string'      | String primitive or String object.                   |
-      | 'number'      | Number primitive or Number object.                   |
-      | 'boolean'     | Boolean primitive or Boolean object.                 |
-      | 'null'        | Null value                                           |
-      | 'undefined'   | Undefined value                                      |
-      | 'function'    | A function                                           |
-      | 'array'       | An instance of Array                                 |
-      | 'regexp'      | An instance of RegExp                                |
-      | 'date'        | An instance of Date                                  |
-      | 'class'       | An Ember class (created using Ember.Object.extend()) |
-      | 'instance'    | An Ember object instance                             |
-      | 'error'       | An instance of the Error object                      |
-      | 'object'      | A JavaScript object not inheriting from Ember.Object |
-
-  Examples:
+  Forces the passed object to be part of an array. If the object is already
+  an array, it will return the object. Otherwise, it will add the object to
+  an array. If obj is `null` or `undefined`, it will return an empty array.
 
   ```javascript
-  Ember.typeOf();                       // 'undefined'
-  Ember.typeOf(null);                   // 'null'
-  Ember.typeOf(undefined);              // 'undefined'
-  Ember.typeOf('michael');              // 'string'
-  Ember.typeOf(new String('michael'));  // 'string'
-  Ember.typeOf(101);                    // 'number'
-  Ember.typeOf(new Number(101));        // 'number'
-  Ember.typeOf(true);                   // 'boolean'
-  Ember.typeOf(new Boolean(true));      // 'boolean'
-  Ember.typeOf(Ember.makeArray);        // 'function'
-  Ember.typeOf([1, 2, 90]);             // 'array'
-  Ember.typeOf(/abc/);                  // 'regexp'
-  Ember.typeOf(new Date());             // 'date'
-  Ember.typeOf(Ember.Object.extend());  // 'class'
-  Ember.typeOf(Ember.Object.create());  // 'instance'
-  Ember.typeOf(new Error('teamocil'));  // 'error'
+  Ember.makeArray();            // []
+  Ember.makeArray(null);        // []
+  Ember.makeArray(undefined);   // []
+  Ember.makeArray('lindsay');   // ['lindsay']
+  Ember.makeArray([1, 2, 42]);  // [1, 2, 42]
 
-  // 'normal' JavaScript object
-  Ember.typeOf({ a: 'b' });             // 'object'
+  var controller = Ember.ArrayProxy.create({ content: [] });
+
+  Ember.makeArray(controller) === controller;  // true
   ```
 
-  @method typeOf
+  @method makeArray
   @for Ember
-  @param {Object} item the item to check
-  @return {String} the type
+  @param {Object} obj the object
+  @return {Array}
+  @private
 */
-function typeOf(item) {
-  var ret, modulePath;
-
-  // ES6TODO: Depends on Ember.Object which is defined in runtime.
-  if (typeof EmberObject === "undefined") {
-    modulePath = 'ember-runtime/system/object';
-    if (Ember.__loader.registry[modulePath]) {
-      EmberObject = Ember.__loader.require(modulePath)['default'];
-    }
-  }
-
-  ret = (item === null || item === undefined) ? String(item) : TYPE_MAP[toString.call(item)] || 'object';
-
-  if (ret === 'function') {
-    if (EmberObject && EmberObject.detect(item)) ret = 'class';
-  } else if (ret === 'object') {
-    if (item instanceof Error) ret = 'error';
-    else if (EmberObject && item instanceof EmberObject) ret = 'instance';
-    else if (item instanceof Date) ret = 'date';
-  }
-
-  return ret;
+export function makeArray(obj) {
+  if (obj === null || obj === undefined) { return []; }
+  return Array.isArray(obj) ? obj : [obj];
 }
 
 /**
@@ -803,33 +423,56 @@ function typeOf(item) {
   @param {Object} obj The object you want to inspect.
   @return {String} A description of the object
   @since 1.4.0
+  @private
 */
 export function inspect(obj) {
-  var type = typeOf(obj);
-  if (type === 'array') {
+  if (obj === null) {
+    return 'null';
+  }
+  if (obj === undefined) {
+    return 'undefined';
+  }
+  if (Array.isArray(obj)) {
     return '[' + obj + ']';
   }
-  if (type !== 'object') {
-    return obj + '';
+  // for non objects
+  var type = typeof obj;
+  if (type !== 'object' && type !== 'symbol') {
+    return '' + obj;
+  }
+  // overridden toString
+  if (typeof obj.toString === 'function' && obj.toString !== toString) {
+    return obj.toString();
   }
 
+  // Object.prototype.toString === {}.toString
   var v;
   var ret = [];
-  for(var key in obj) {
+  for (var key in obj) {
     if (obj.hasOwnProperty(key)) {
       v = obj[key];
       if (v === 'toString') { continue; } // ignore useless items
-      if (typeOf(v) === 'function') { v = "function() { ... }"; }
-      ret.push(key + ": " + v);
+      if (typeof v === 'function') { v = 'function() { ... }'; }
+
+      if (v && typeof v.toString !== 'function') {
+        ret.push(key + ': ' + toString.call(v));
+      } else {
+        ret.push(key + ': ' + v);
+      }
     }
   }
-  return "{" + ret.join(", ") + "}";
+  return '{' + ret.join(', ') + '}';
 }
 
 // The following functions are intentionally minified to keep the functions
 // below Chrome's function body size inlining limit of 600 chars.
-
-export function apply(t /* target */, m /* method */, a /* args */) {
+/**
+  @param {Object} t target
+  @param {Function} m method
+  @param {Array} a args
+  @private
+*/
+export function apply(t, m, a) {
   var l = a && a.length;
   if (!a || !l) { return m.call(t); }
   switch (l) {
@@ -842,7 +485,13 @@ export function apply(t /* target */, m /* method */, a /* args */) {
   }
 }
 
-export function applyStr(t /* target */, m /* method */, a /* args */) {
+/**
+  @param {Object} t target
+  @param {String} m method
+  @param {Array} a args
+  @private
+*/
+export function applyStr(t, m, a) {
   var l = a && a.length;
   if (!a || !l) { return t[m](); }
   switch (l) {
@@ -855,14 +504,25 @@ export function applyStr(t /* target */, m /* method */, a /* args */) {
   }
 }
 
+export function lookupDescriptor(obj, keyName) {
+  let current = obj;
+  while (current) {
+    let descriptor = Object.getOwnPropertyDescriptor(current, keyName);
+
+    if (descriptor) {
+      return descriptor;
+    }
+
+    current = Object.getPrototypeOf(current);
+  }
+
+  return null;
+}
+
 export {
   GUID_KEY,
-  META_DESC,
-  EMPTY_META,
-  meta,
-  typeOf,
-  tryCatchFinally,
-  isArray,
-  canInvoke,
-  tryFinally
+  makeArray,
+  canInvoke
 };
+
+

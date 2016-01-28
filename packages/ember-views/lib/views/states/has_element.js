@@ -1,66 +1,74 @@
-import _default from "ember-views/views/states/default";
-import run from "ember-metal/run_loop";
-import merge from "ember-metal/merge";
-import { create } from "ember-metal/platform";
-import jQuery from "ember-views/system/jquery";
-import EmberError from "ember-metal/error";
+import _default from 'ember-views/views/states/default';
+import assign from 'ember-metal/assign';
+import jQuery from 'ember-views/system/jquery';
+import run from 'ember-metal/run_loop';
 
 /**
 @module ember
 @submodule ember-views
 */
 
-import { get } from "ember-metal/property_get";
+import { get } from 'ember-metal/property_get';
+import { internal } from 'htmlbars-runtime';
 
-var hasElement = create(_default);
+var hasElement = Object.create(_default);
 
-merge(hasElement, {
-  $: function(view, sel) {
-    var elem = view.get('concreteView').element;
+assign(hasElement, {
+  $(view, sel) {
+    var elem = view.element;
     return sel ? jQuery(sel, elem) : jQuery(elem);
   },
 
-  getElement: function(view) {
+  getElement(view) {
     var parent = get(view, 'parentView');
     if (parent) { parent = get(parent, 'element'); }
     if (parent) { return view.findElementInParentElement(parent); }
-    return jQuery("#" + get(view, 'elementId'))[0];
+    return jQuery('#' + get(view, 'elementId'))[0];
   },
 
   // once the view has been inserted into the DOM, rerendering is
   // deferred to allow bindings to synchronize.
-  rerender: function(view) {
-    if (view._root._morph && !view._elementInserted) {
-      throw new EmberError("Something you did caused a view to re-render after it rendered but before it was inserted into the DOM.");
-    }
-    // TODO: should be scheduled with renderer
-    run.scheduleOnce('render', function () {
-      if (view.isDestroying) return;
-      view._renderer.renderTree(view, view._parentView);
+  rerender(view) {
+    view.renderer.ensureViewNotRendering(view);
+
+    var renderNode = view._renderNode;
+
+    renderNode.isDirty = true;
+    internal.visitChildren(renderNode.childNodes, function(node) {
+      if (node.getState().manager) {
+        node.shouldReceiveAttrs = true;
+      }
+      node.isDirty = true;
     });
+
+    renderNode.ownerNode.emberView.scheduleRevalidate(renderNode, view.toString(), 'rerendering');
+  },
+
+  cleanup(view) {
+    view._currentState.destroyElement(view);
   },
 
   // once the view is already in the DOM, destroying it removes it
   // from the DOM, nukes its element, and puts it back into the
   // preRender state if inDOM.
 
-  destroyElement: function(view) {
-    view._renderer.remove(view, false);
+  destroyElement(view) {
+    view.renderer.remove(view, false);
     return view;
   },
 
   // Handle events from `Ember.EventDispatcher`
-  handleEvent: function(view, eventName, evt) {
+  handleEvent(view, eventName, evt) {
     if (view.has(eventName)) {
       // Handler should be able to re-dispatch events, so we don't
       // preventDefault or stopPropagation.
-      return view.trigger(eventName, evt);
+      return run.join(view, view.trigger, eventName, evt);
     } else {
       return true; // continue event propagation
     }
   },
 
-  invokeObserver: function(target, observer) {
+  invokeObserver(target, observer) {
     observer.call(target);
   }
 });

@@ -5,66 +5,57 @@ for a detailed explanation.
 
 ## Feature Flags
 
-* `ember-routing-named-substates`
+* `ember-libraries-isregistered`
 
-  Add named substates; e.g. when resolving a `loading` or `error`
-  substate to enter, Ember will take into account the name of the
-  immediate child route that the `error`/`loading` action originated
-  from, e.g. 'foo' if `FooRoute`, and try and enter `foo_error` or
-  `foo_loading` if it exists. This also adds the ability for a
-  top-level `application_loading` or `application_error` state to
-  be entered for `loading`/`error` events emitted from
-  `ApplicationRoute`.
+  Add `isRegistered` to `Ember.libraries`. This convenience method checks whether
+  a library is registered with Ember or not.
 
-  Added in [#3655](https://github.com/emberjs/ember.js/pull/3655).
+* `ember-application-visit`
 
-* `composable-computed-properties`
+  Provides an API for creating an application instance and specifying
+  an initial URL that it should route to. This is useful for testing
+  (you can have multiple instances of an app without having to run
+  serially and call `reset()` each time), as well as being critical to
+  for FastBoot.
 
-  This feature allows you to combine (compose) different computed
-  properties together. So it gives you a really nice "functional
-  programming" like syntax to deal with complex expressions.
+* `ember-htmlbars-component-generation`
 
-  Added in [#3696](https://github.com/emberjs/ember.js/pull/3696).
+  Enables HTMLBars compiler to interpret `<x-foo></x-foo>` as a component
+  invocation (instead of a standard HTML5 style element).
 
-* `ember-routing-will-change-hooks`
-  Finer-grained `willTransition`-esque actions:
+* `ember-debug-handlers`
 
-  - `willLeave`: fires on routes that will no longer be active after
-    the transition
-  - `willChangeModel`: fires on routes that will still be active
-    but will re-resolve their models
+  Implements RFC https://github.com/emberjs/rfcs/pull/65, adding support for
+  custom deprecation and warning handlers.
 
-  Both of these hooks act like willTransition in the sense that they
-  give you an opportunity to abort the transition before it happens.
-  Common use cases include animating things away or prompting to user
-  to deal with unsaved changes.
+* `ember-routing-routable-components`
 
-  Added in [#4760](https://github.com/emberjs/ember.js/pull/4760)
+  Implements RFC https://github.com/emberjs/rfcs/pull/38, adding support for
+  routable components.
 
-* `ember-metal-is-present`
+* `ember-metal-ember-assign`
 
-  Adds `Ember.isPresent` as the inverse of `Ember.isBlank`. This convenience
-  method can lead to more semantic and clearer code.
+  Add `Ember.assign` that is polyfill for `Object.assign`.
 
-  Added in [#5136](https://github.com/emberjs/ember.js/pull/5136)
+* `ember-contextual-components`
 
-* `property-brace-expansion-improvement`
+  Introduce a helper that creates closures over attrs and its own path, then
+  allow the closed over cell to be invoked via the `{{component` helper or
+  any reference with a dot in the path.
 
-  Property brace expansion now allows multiple sets of braces to be used,
-  as well as not restricting their location in the string.
+  For example:
 
-  Added in [#4617](https://github.com/emberjs/ember.js/pull/4617)
+  ```js
+  {{#with (hash profile=(component "user-profile")) as |userComponents|}}
+    {{userComponents.profile}}
+  {{/with}}
+  ```
 
-* `ember-routing-multi-current-when`
+  Implements RFC [#64](https://github.com/emberjs/rfcs/blob/master/text/0064-contextual-component-lookup.md)
 
-  Allows the `link-to` helper's currentWhen property to accept multiple routes
-  using a ` ` (space) delimiter, for more control over a link's active state.
+* `ember-htmlbars-local-lookup`
 
-  Added in [#3673](https://github.com/emberjs/ember.js/pull/3673)
+  Provides the ability for component lookup to be relative to the source template.
 
-* `ember-runtime-item-controller-inline-class`
-
-  This feature allows you to specify a controller class inline for the `itemController`
-  property of an `array controller`.
-
-  Added in [#5301](https://github.com/emberjs/ember.js/pull/5301)
+  When the proper API's are implemented by the resolver in use this feature allows `{{x-foo}}` in a
+  given routes template (say the `post` route) to lookup a component nested under `post`.

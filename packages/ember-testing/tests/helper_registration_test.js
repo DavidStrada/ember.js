@@ -1,10 +1,10 @@
-import run from "ember-metal/run_loop";
-import Test from "ember-testing/test";
-import EmberApplication from "ember-application/system/application";
+import run from 'ember-metal/run_loop';
+import Test from 'ember-testing/test';
+import EmberApplication from 'ember-application/system/application';
 
 var App, appBooted, helperContainer;
 
-function registerHelper(){
+function registerHelper() {
   Test.registerHelper('boot', function(app) {
     run(app, app.advanceReadiness);
     appBooted = true;
@@ -12,13 +12,13 @@ function registerHelper(){
   });
 }
 
-function unregisterHelper(){
+function unregisterHelper() {
   Test.unregisterHelper('boot');
 }
 
 var originalAdapter = Test.adapter;
 
-function setupApp(){
+function setupApp() {
   appBooted = false;
   helperContainer = {};
 
@@ -29,21 +29,21 @@ function setupApp(){
   });
 }
 
-function destroyApp(){
+function destroyApp() {
   if (App) {
     run(App, 'destroy');
     App = null;
   }
 }
 
-QUnit.module("Test - registerHelper/unregisterHelper", {
-  teardown: function(){
+QUnit.module('Test - registerHelper/unregisterHelper', {
+  teardown() {
     Test.adapter = originalAdapter;
     destroyApp();
   }
 });
 
-test("Helper gets registered", function() {
+QUnit.test('Helper gets registered', function() {
   expect(2);
 
   registerHelper();
@@ -53,18 +53,21 @@ test("Helper gets registered", function() {
   ok(helperContainer.boot);
 });
 
-test("Helper is ran when called", function(){
-  expect(1);
+QUnit.test('Helper is ran when called', function(assert) {
+  let done = assert.async();
+  assert.expect(1);
 
   registerHelper();
   setupApp();
 
-  App.testHelpers.boot().then(function() {
-    ok(appBooted);
-  });
+  App.testHelpers.boot()
+    .then(function() {
+      assert.ok(appBooted);
+    })
+    .finally(done);
 });
 
-test("Helper can be unregistered", function(){
+QUnit.test('Helper can be unregistered', function() {
   expect(4);
 
   registerHelper();
@@ -77,7 +80,6 @@ test("Helper can be unregistered", function(){
 
   setupApp();
 
-  ok(!App.testHelpers.boot, "once unregistered the helper is not added to App.testHelpers");
-  ok(!helperContainer.boot, "once unregistered the helper is not added to the helperContainer");
+  ok(!App.testHelpers.boot, 'once unregistered the helper is not added to App.testHelpers');
+  ok(!helperContainer.boot, 'once unregistered the helper is not added to the helperContainer');
 });
-

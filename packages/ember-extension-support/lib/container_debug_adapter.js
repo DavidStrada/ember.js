@@ -1,12 +1,12 @@
-import Ember from "ember-metal/core";
-import { A as emberA } from "ember-runtime/system/native_array";
-import { typeOf } from "ember-metal/utils";
+import Ember from 'ember-metal/core';
+import { A as emberA } from 'ember-runtime/system/native_array';
+import { typeOf } from 'ember-runtime/utils';
 import {
   dasherize,
   classify
-} from "ember-runtime/system/string";
-import Namespace from "ember-runtime/system/namespace";
-import EmberObject from "ember-runtime/system/object";
+} from 'ember-runtime/system/string';
+import Namespace from 'ember-runtime/system/namespace';
+import EmberObject from 'ember-runtime/system/object';
 
 /**
 @module ember
@@ -36,7 +36,7 @@ import EmberObject from "ember-runtime/system/object";
   Application.initializer({
     name: "containerDebugAdapter",
 
-    initialize: function(container, application) {
+    initialize: function(application) {
       application.register('container-debug-adapter:main', require('app/container-debug-adapter'));
     }
   });
@@ -44,20 +44,11 @@ import EmberObject from "ember-runtime/system/object";
 
   @class ContainerDebugAdapter
   @namespace Ember
-  @extends EmberObject
+  @extends Ember.Object
   @since 1.5.0
+  @public
 */
 export default EmberObject.extend({
-  /**
-    The container of the application being debugged.
-    This property will be injected
-    on creation.
-
-    @property container
-    @default null
-  */
-  container: null,
-
   /**
     The resolver instance of the application
     being debugged. This property will be injected
@@ -65,6 +56,7 @@ export default EmberObject.extend({
 
     @property resolver
     @default null
+    @public
   */
   resolver: null,
 
@@ -75,9 +67,13 @@ export default EmberObject.extend({
     @method canCatalogEntriesByType
     @param {String} type The type. e.g. "model", "controller", "route"
     @return {boolean} whether a list is available for this type.
+    @public
   */
-  canCatalogEntriesByType: function(type) {
-    if (type === 'model' || type === 'template') return false;
+  canCatalogEntriesByType(type) {
+    if (type === 'model' || type === 'template') {
+      return false;
+    }
+
     return true;
   },
 
@@ -87,10 +83,12 @@ export default EmberObject.extend({
     @method catalogEntriesByType
     @param {String} type The type. e.g. "model", "controller", "route"
     @return {Array} An array of strings.
+    @public
   */
-  catalogEntriesByType: function(type) {
-    var namespaces = emberA(Namespace.NAMESPACES), types = emberA();
-    var typeSuffixRegex = new RegExp(classify(type) + "$");
+  catalogEntriesByType(type) {
+    var namespaces = emberA(Namespace.NAMESPACES);
+    var types = emberA();
+    var typeSuffixRegex = new RegExp(`${classify(type)}$`);
 
     namespaces.forEach(function(namespace) {
       if (namespace !== Ember) {

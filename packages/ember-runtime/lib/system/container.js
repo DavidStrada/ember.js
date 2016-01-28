@@ -1,6 +1,9 @@
-import set from "ember-metal/property_set";
+import { set } from 'ember-metal/property_set';
+import Registry from 'container/registry';
+import Container from 'container/container';
+import { getOwner, setOwner } from 'container/owner';
 
-var Container = requireModule('container')["default"];
+Registry.set = set;
 Container.set = set;
 
-export default Container;
+export { Registry, Container, getOwner, setOwner };

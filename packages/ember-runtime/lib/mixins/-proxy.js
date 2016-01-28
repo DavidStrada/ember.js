@@ -3,24 +3,23 @@
 @submodule ember-runtime
 */
 
-import Ember from "ember-metal/core"; // Ember.assert
-import { get } from "ember-metal/property_get";
-import { set } from "ember-metal/property_set";
-import { meta } from "ember-metal/utils";
+import { assert, deprecate } from 'ember-metal/debug';
+import { get } from 'ember-metal/property_get';
+import { set } from 'ember-metal/property_set';
+import { meta } from 'ember-metal/meta';
 import {
   addObserver,
   removeObserver,
-  addBeforeObserver,
-  removeBeforeObserver
-} from "ember-metal/observer";
+  _addBeforeObserver,
+  _removeBeforeObserver
+} from 'ember-metal/observer';
 import {
   propertyWillChange,
   propertyDidChange
-} from "ember-metal/property_events";
-import { computed } from "ember-metal/computed";
-import { defineProperty } from "ember-metal/properties";
-import { Mixin, observer } from "ember-metal/mixin";
-import { fmt } from "ember-runtime/system/string";
+} from 'ember-metal/property_events';
+import { computed } from 'ember-metal/computed';
+import { defineProperty } from 'ember-metal/properties';
+import { Mixin, observer } from 'ember-metal/mixin';
 
 function contentPropertyWillChange(content, contentKey) {
   var key = contentKey.slice(8); // remove "content."
@@ -40,6 +39,7 @@ function contentPropertyDidChange(content, contentKey) {
 
   @class ProxyMixin
   @namespace Ember
+  @private
 */
 export default Mixin.create({
   /**
@@ -48,36 +48,42 @@ export default Mixin.create({
     @property content
     @type Ember.Object
     @default null
+    @private
   */
   content: null,
   _contentDidChange: observer('content', function() {
-    Ember.assert("Can't set Proxy's content to itself", get(this, 'content') !== this);
+    assert('Can\'t set Proxy\'s content to itself', get(this, 'content') !== this);
   }),
 
   isTruthy: computed.bool('content'),
 
   _debugContainerKey: null,
 
-  willWatchProperty: function (key) {
+  willWatchProperty(key) {
     var contentKey = 'content.' + key;
-    addBeforeObserver(this, contentKey, null, contentPropertyWillChange);
+    _addBeforeObserver(this, contentKey, null, contentPropertyWillChange);
     addObserver(this, contentKey, null, contentPropertyDidChange);
   },
 
-  didUnwatchProperty: function (key) {
+  didUnwatchProperty(key) {
     var contentKey = 'content.' + key;
-    removeBeforeObserver(this, contentKey, null, contentPropertyWillChange);
+    _removeBeforeObserver(this, contentKey, null, contentPropertyWillChange);
     removeObserver(this, contentKey, null, contentPropertyDidChange);
   },
 
-  unknownProperty: function (key) {
+  unknownProperty(key) {
     var content = get(this, 'content');
     if (content) {
+      deprecate(
+        `You attempted to access \`${key}\` from \`${this}\`, but object proxying is deprecated. Please use \`model.${key}\` instead.`,
+        !this.isController,
+        { id: 'ember-runtime.controller-proxy', until: '3.0.0' }
+      );
       return get(content, key);
     }
   },
 
-  setUnknownProperty: function (key, value) {
+  setUnknownProperty(key, value) {
     var m = meta(this);
     if (m.proto === this) {
       // if marked as prototype then just defineProperty
@@ -87,7 +93,13 @@ export default Mixin.create({
     }
 
     var content = get(this, 'content');
-    Ember.assert(fmt("Cannot delegate set('%@', %@) to the 'content' property of object proxy %@: its 'content' is undefined.", [key, value, this]), content);
+    assert(`Cannot delegate set('${key}', ${value}) to the \'content\' property of object proxy ${this}: its 'content' is undefined.`, content);
+
+    deprecate(
+      `You attempted to set \`${key}\` from \`${this}\`, but object proxying is deprecated. Please use \`model.${key}\` instead.`,
+      !this.isController,
+      { id: 'ember-runtime.controller-proxy', until: '3.0.0' }
+    );
     return set(content, key, value);
   }
 

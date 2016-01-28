@@ -2,13 +2,16 @@
 @module ember
 @submodule ember-runtime
 */
-import Ember from "ember-metal/core"; // Ember.STRINGS, Ember.FEATURES
+import { deprecate } from 'ember-metal/debug';
 import {
-  isArray,
   inspect as emberInspect
-} from "ember-metal/utils";
+} from 'ember-metal/utils';
+import { isArray } from 'ember-runtime/utils';
+import {
+  get as getString
+} from 'ember-runtime/string_registry';
 
-import Cache from "ember-metal/cache";
+import Cache from 'ember-metal/cache';
 
 var STRING_DASHERIZE_REGEXP = (/[ _]/g);
 
@@ -16,45 +19,63 @@ var STRING_DASHERIZE_CACHE = new Cache(1000, function(key) {
   return decamelize(key).replace(STRING_DASHERIZE_REGEXP, '-');
 });
 
+var STRING_CAMELIZE_REGEXP_1 = (/(\-|\_|\.|\s)+(.)?/g);
+var STRING_CAMELIZE_REGEXP_2 = (/(^|\/)([A-Z])/g);
+
 var CAMELIZE_CACHE = new Cache(1000, function(key) {
-  return key.replace(STRING_CAMELIZE_REGEXP, function(match, separator, chr) {
+  return key.replace(STRING_CAMELIZE_REGEXP_1, function(match, separator, chr) {
     return chr ? chr.toUpperCase() : '';
-  }).replace(/^([A-Z])/, function(match, separator, chr) {
+  }).replace(STRING_CAMELIZE_REGEXP_2, function(match, separator, chr) {
     return match.toLowerCase();
   });
 });
 
+var STRING_CLASSIFY_REGEXP_1 = (/^(\-|_)+(.)?/);
+var STRING_CLASSIFY_REGEXP_2 = (/(.)(\-|\_|\.|\s)+(.)?/g);
+var STRING_CLASSIFY_REGEXP_3 = (/(^|\/|\.)([a-z])/g);
+
 var CLASSIFY_CACHE = new Cache(1000, function(str) {
-  var parts = str.split(".");
-  var out = [];
-
-  for (var i=0, l=parts.length; i<l; i++) {
-    var camelized = camelize(parts[i]);
-    out.push(camelized.charAt(0).toUpperCase() + camelized.substr(1));
+  var replace1 = function(match, separator, chr) {
+    return chr ? ('_' + chr.toUpperCase()) : '';
+  };
+  var replace2 = function(match, initialChar, separator, chr) {
+    return initialChar + (chr ? chr.toUpperCase() : '');
+  };
+  var parts = str.split('/');
+  for (var i = 0, len = parts.length; i < len; i++) {
+    parts[i] = parts[i]
+      .replace(STRING_CLASSIFY_REGEXP_1, replace1)
+      .replace(STRING_CLASSIFY_REGEXP_2, replace2);
   }
-
-  return out.join(".");
+  return parts.join('/')
+  .replace(STRING_CLASSIFY_REGEXP_3, function(match, separator, chr) {
+    return match.toUpperCase();
+  });
 });
+
+var STRING_UNDERSCORE_REGEXP_1 = (/([a-z\d])([A-Z]+)/g);
+var STRING_UNDERSCORE_REGEXP_2 = (/\-|\s+/g);
 
 var UNDERSCORE_CACHE = new Cache(1000, function(str) {
   return str.replace(STRING_UNDERSCORE_REGEXP_1, '$1_$2').
     replace(STRING_UNDERSCORE_REGEXP_2, '_').toLowerCase();
 });
 
+var STRING_CAPITALIZE_REGEXP = (/(^|\/)([a-z])/g);
+
 var CAPITALIZE_CACHE = new Cache(1000, function(str) {
-  return str.charAt(0).toUpperCase() + str.substr(1);
+  return str.replace(STRING_CAPITALIZE_REGEXP, function(match, separator, chr) {
+    return match.toUpperCase();
+  });
 });
+
+var STRING_DECAMELIZE_REGEXP = (/([a-z\d])([A-Z])/g);
 
 var DECAMELIZE_CACHE = new Cache(1000, function(str) {
   return str.replace(STRING_DECAMELIZE_REGEXP, '$1_$2').toLowerCase();
 });
 
-var STRING_DECAMELIZE_REGEXP = (/([a-z\d])([A-Z])/g);
-var STRING_CAMELIZE_REGEXP = (/(\-|_|\.|\s)+(.)?/g);
-var STRING_UNDERSCORE_REGEXP_1 = (/([a-z\d])([A-Z]+)/g);
-var STRING_UNDERSCORE_REGEXP_2 = (/\-|\s+/g);
-
-function fmt(str, formats) {
+function _fmt(str, formats) {
   var cachedFormats = formats;
 
   if (!isArray(cachedFormats) || arguments.length > 2) {
@@ -74,13 +95,22 @@ function fmt(str, formats) {
   });
 }
 
+function fmt(str, formats) {
+  deprecate(
+    'Ember.String.fmt is deprecated, use ES6 template strings instead.',
+    false,
+    { id: 'ember-string-utils.fmt', until: '3.0.0', url: 'http://babeljs.io/docs/learn-es2015/#template-strings' }
+  );
+  return _fmt(...arguments);
+}
+
 function loc(str, formats) {
   if (!isArray(formats) || arguments.length > 2) {
     formats = Array.prototype.slice.call(arguments, 1);
   }
 
-  str = Ember.STRINGS[str] || str;
-  return fmt(str, formats);
+  str = getString(str) || str;
+  return _fmt(str, formats);
 }
 
 function w(str) {
@@ -112,17 +142,6 @@ function capitalize(str) {
 }
 
 /**
-  Defines the hash of localized strings for the current language. Used by
-  the `Ember.String.loc()` helper. To localize, add string values to this
-  hash.
-
-  @property STRINGS
-  @for Ember
-  @type Hash
-*/
-Ember.STRINGS = {};
-
-/**
   Defines string helper methods including string formatting and localization.
   Unless `Ember.EXTEND_PROTOTYPES.String` is `false` these methods will also be
   added to the `String.prototype` as well.
@@ -130,6 +149,7 @@ Ember.STRINGS = {};
   @class String
   @namespace Ember
   @static
+  @public
 */
 export default {
   /**
@@ -151,8 +171,10 @@ export default {
     @param {String} str The string to format
     @param {Array} formats An array of parameters to interpolate into string.
     @return {String} formatted string
+    @public
+    @deprecated Use ES6 template strings instead: http://babeljs.io/docs/learn-es2015/#template-strings
   */
-  fmt: fmt,
+  fmt,
 
   /**
     Formats the passed string, but first looks up the string in the localized
@@ -177,8 +199,9 @@ export default {
     @param {String} str The string to format
     @param {Array} formats Optional array of parameters to interpolate into string.
     @return {String} formatted string
+    @public
   */
-  loc: loc,
+  loc,
 
   /**
     Splits a string into separate units separated by spaces, eliminating any
@@ -198,8 +221,9 @@ export default {
     @method w
     @param {String} str The string to split
     @return {Array} array containing the split strings
+    @public
   */
-  w: w,
+  w,
 
   /**
     Converts a camelized string into all lower case separated by underscores.
@@ -214,8 +238,9 @@ export default {
     @method decamelize
     @param {String} str The string to decamelize.
     @return {String} the decamelized string.
+    @public
   */
-  decamelize: decamelize,
+  decamelize,
 
   /**
     Replaces underscores, spaces, or camelCase with dashes.
@@ -225,13 +250,15 @@ export default {
     'action_name'.dasherize();        // 'action-name'
     'css-class-name'.dasherize();     // 'css-class-name'
     'my favorite items'.dasherize();  // 'my-favorite-items'
+    'privateDocs/ownerInvoice'.dasherize(); // 'private-docs/owner-invoice'
     ```
 
     @method dasherize
     @param {String} str The string to dasherize.
     @return {String} the dasherized string.
+    @public
   */
-  dasherize: dasherize,
+  dasherize,
 
   /**
     Returns the lowerCamelCase form of a string.
@@ -242,13 +269,15 @@ export default {
     'css-class-name'.camelize();     // 'cssClassName'
     'my favorite items'.camelize();  // 'myFavoriteItems'
     'My Favorite Items'.camelize();  // 'myFavoriteItems'
+    'private-docs/owner-invoice'.camelize(); // 'privateDocs/ownerInvoice'
     ```
 
     @method camelize
     @param {String} str The string to camelize.
     @return {String} the camelized string.
+    @public
   */
-  camelize: camelize,
+  camelize,
 
   /**
     Returns the UpperCamelCase form of a string.
@@ -258,13 +287,15 @@ export default {
     'action_name'.classify();        // 'ActionName'
     'css-class-name'.classify();     // 'CssClassName'
     'my favorite items'.classify();  // 'MyFavoriteItems'
+    'private-docs/owner-invoice'.classify(); // 'PrivateDocs/OwnerInvoice'
     ```
 
     @method classify
     @param {String} str the string to classify
     @return {String} the classified string
+    @public
   */
-  classify: classify,
+  classify,
 
   /**
     More general than decamelize. Returns the lower\_case\_and\_underscored
@@ -275,13 +306,15 @@ export default {
     'action_name'.underscore();        // 'action_name'
     'css-class-name'.underscore();     // 'css_class_name'
     'my favorite items'.underscore();  // 'my_favorite_items'
+    'privateDocs/ownerInvoice'.underscore(); // 'private_docs/owner_invoice'
     ```
 
     @method underscore
     @param {String} str The string to underscore.
     @return {String} the underscored string.
+    @public
   */
-  underscore: underscore,
+  underscore,
 
   /**
     Returns the Capitalized form of a string
@@ -291,13 +324,15 @@ export default {
     'action_name'.capitalize()       // 'Action_name'
     'css-class-name'.capitalize()    // 'Css-class-name'
     'my favorite items'.capitalize() // 'My favorite items'
+    'privateDocs/ownerInvoice'.capitalize(); // 'PrivateDocs/ownerInvoice'
     ```
 
     @method capitalize
     @param {String} str The string to capitalize.
     @return {String} The capitalized string.
+    @public
   */
-  capitalize: capitalize
+  capitalize
 };
 
 export {

@@ -1,21 +1,19 @@
+'no use strict';
+// Remove "use strict"; from transpiled module until
+// https://bugs.webkit.org/show_bug.cgi?id=138038 is fixed
+
 /**
-@module ember-metal
+@module ember
+@submodule ember-metal
 */
-import Ember from "ember-metal/core";
+import { assert } from 'ember-metal/debug';
 import {
-  meta,
-  tryFinally,
   apply,
   applyStr
-} from "ember-metal/utils";
-import { create } from "ember-metal/platform";
+} from 'ember-metal/utils';
+import { meta as metaFor, peekMeta } from 'ember-metal/meta';
 
-var a_slice = [].slice;
-var metaFor = meta;
-
-/* listener flags */
-var ONCE = 1;
-var SUSPENDED = 2;
+import { ONCE, SUSPENDED } from 'ember-metal/meta_listeners';
 
 
 /*
@@ -43,76 +41,32 @@ function indexOf(array, target, method) {
   // of the array and search in reverse
   for (var i = array.length - 3 ; i >=0; i -= 3) {
     if (target === array[i] && method === array[i + 1]) {
-         index = i; break;
+      index = i;
+      break;
     }
   }
   return index;
 }
 
-function actionsFor(obj, eventName) {
-  var meta = metaFor(obj, true);
-  var actions;
-  var listeners = meta.listeners;
+export function accumulateListeners(obj, eventName, otherActions) {
+  var meta = peekMeta(obj);
+  if (!meta) { return; }
+  var actions = meta.matchingListeners(eventName);
+  var newActions = [];
 
-  if (!listeners) {
-    listeners = meta.listeners = create(null);
-    listeners.__source__ = obj;
-  } else if (listeners.__source__ !== obj) {
-    // setup inherited copy of the listeners object
-    listeners = meta.listeners = create(listeners);
-    listeners.__source__ = obj;
-  }
-
-  actions = listeners[eventName];
-
-  // if there are actions, but the eventName doesn't exist in our listeners, then copy them from the prototype
-  if (actions && actions.__source__ !== obj) {
-    actions = listeners[eventName] = listeners[eventName].slice();
-    actions.__source__ = obj;
-  } else if (!actions) {
-    actions = listeners[eventName] = [];
-    actions.__source__ = obj;
-  }
-
-  return actions;
-}
-
-export function listenersUnion(obj, eventName, otherActions) {
-  var meta = obj['__ember_meta__'];
-  var actions = meta && meta.listeners && meta.listeners[eventName];
-
-  if (!actions) { return; }
   for (var i = actions.length - 3; i >= 0; i -= 3) {
     var target = actions[i];
-    var method = actions[i+1];
-    var flags = actions[i+2];
+    var method = actions[i + 1];
+    var flags = actions[i + 2];
     var actionIndex = indexOf(otherActions, target, method);
 
     if (actionIndex === -1) {
       otherActions.push(target, method, flags);
+      newActions.push(target, method, flags);
     }
   }
-}
 
-export function listenersDiff(obj, eventName, otherActions) {
-  var meta = obj['__ember_meta__'];
-  var actions = meta && meta.listeners && meta.listeners[eventName];
-  var diffActions = [];
-
-  if (!actions) { return; }
-  for (var i = actions.length - 3; i >= 0; i -= 3) {
-    var target = actions[i];
-    var method = actions[i+1];
-    var flags = actions[i+2];
-    var actionIndex = indexOf(otherActions, target, method);
-
-    if (actionIndex !== -1) { continue; }
-
-    otherActions.push(target, method, flags);
-    diffActions.push(target, method, flags);
-  }
-
-  return diffActions;
+  return newActions;
 }
 
 /**
@@ -122,27 +76,25 @@ export function listenersDiff(obj, eventName, otherActions) {
   @for Ember
   @param obj
   @param {String} eventName
-  @param {Object|Function} targetOrMethod A target object or a function
+  @param {Object|Function} target A target object or a function
   @param {Function|String} method A function or the name of a function to be called on `target`
   @param {Boolean} once A flag whether a function should only be called once
+  @public
 */
 export function addListener(obj, eventName, target, method, once) {
-  Ember.assert("You must pass at least an object and event name to Ember.addListener", !!obj && !!eventName);
+  assert('You must pass at least an object and event name to Ember.addListener', !!obj && !!eventName);
 
   if (!method && 'function' === typeof target) {
     method = target;
     target = null;
   }
 
-  var actions = actionsFor(obj, eventName);
-  var actionIndex = indexOf(actions, target, method);
   var flags = 0;
+  if (once) {
+    flags |= ONCE;
+  }
 
-  if (once) flags |= ONCE;
-
-  if (actionIndex !== -1) { return; }
-
-  actions.push(target, method, flags);
+  metaFor(obj).addToListeners(eventName, target, method, flags);
 
   if ('function' === typeof obj.didAddListener) {
     obj.didAddListener(eventName, target, method);
@@ -158,42 +110,23 @@ export function addListener(obj, eventName, target, method, once) {
   @for Ember
   @param obj
   @param {String} eventName
-  @param {Object|Function} targetOrMethod A target object or a function
+  @param {Object|Function} target A target object or a function
   @param {Function|String} method A function or the name of a function to be called on `target`
+  @public
 */
-function removeListener(obj, eventName, target, method) {
-  Ember.assert("You must pass at least an object and event name to Ember.removeListener", !!obj && !!eventName);
+export function removeListener(obj, eventName, target, method) {
+  assert('You must pass at least an object and event name to Ember.removeListener', !!obj && !!eventName);
 
   if (!method && 'function' === typeof target) {
     method = target;
     target = null;
   }
 
-  function _removeListener(target, method) {
-    var actions = actionsFor(obj, eventName);
-    var actionIndex = indexOf(actions, target, method);
-
-    // action doesn't exist, give up silently
-    if (actionIndex === -1) { return; }
-
-    actions.splice(actionIndex, 3);
-
+  metaFor(obj).removeFromListeners(eventName, target, method, (...args) => {
     if ('function' === typeof obj.didRemoveListener) {
-      obj.didRemoveListener(eventName, target, method);
+      obj.didRemoveListener(...args);
     }
-  }
-
-  if (method) {
-    _removeListener(target, method);
-  } else {
-    var meta = obj['__ember_meta__'];
-    var actions = meta && meta.listeners && meta.listeners[eventName];
-
-    if (!actions) { return; }
-    for (var i = actions.length - 3; i >= 0; i -= 3) {
-      _removeListener(actions[i], actions[i+1]);
-    }
-  }
+  });
 }
 
 /**
@@ -210,27 +143,12 @@ function removeListener(obj, eventName, target, method) {
   @private
   @param obj
   @param {String} eventName
-  @param {Object|Function} targetOrMethod A target object or a function
+  @param {Object|Function} target A target object or a function
   @param {Function|String} method A function or the name of a function to be called on `target`
   @param {Function} callback
 */
 export function suspendListener(obj, eventName, target, method, callback) {
-  if (!method && 'function' === typeof target) {
-    method = target;
-    target = null;
-  }
-
-  var actions = actionsFor(obj, eventName);
-  var actionIndex = indexOf(actions, target, method);
-
-  if (actionIndex !== -1) {
-    actions[actionIndex+2] |= SUSPENDED; // mark the action as suspended
-  }
-
-  function tryable()   { return callback.call(target); }
-  function finalizer() { if (actionIndex !== -1) { actions[actionIndex+2] &= ~SUSPENDED; } }
-
-  return tryFinally(tryable, finalizer);
+  return suspendListeners(obj, [eventName], target, method, callback);
 }
 
 /**
@@ -241,8 +159,8 @@ export function suspendListener(obj, eventName, target, method, callback) {
 
   @private
   @param obj
-  @param {Array} eventName Array of event names
-  @param {Object|Function} targetOrMethod A target object or a function
+  @param {Array} eventNames Array of event names
+  @param {Object|Function} target A target object or a function
   @param {Function|String} method A function or the name of a function to be called on `target`
   @param {Function} callback
 */
@@ -251,33 +169,7 @@ export function suspendListeners(obj, eventNames, target, method, callback) {
     method = target;
     target = null;
   }
-
-  var suspendedActions = [];
-  var actionsList = [];
-  var eventName, actions, i, l;
-
-  for (i=0, l=eventNames.length; i<l; i++) {
-    eventName = eventNames[i];
-    actions = actionsFor(obj, eventName);
-    var actionIndex = indexOf(actions, target, method);
-
-    if (actionIndex !== -1) {
-      actions[actionIndex+2] |= SUSPENDED;
-      suspendedActions.push(actionIndex);
-      actionsList.push(actions);
-    }
-  }
-
-  function tryable() { return callback.call(target); }
-
-  function finalizer() {
-    for (var i = 0, l = suspendedActions.length; i < l; i++) {
-      var actionIndex = suspendedActions[i];
-      actionsList[i][actionIndex+2] &= ~SUSPENDED;
-    }
-  }
-
-  return tryFinally(tryable, finalizer);
+  return metaFor(obj).suspendListeners(eventNames, target, method, callback);
 }
 
 /**
@@ -289,17 +181,7 @@ export function suspendListeners(obj, eventNames, target, method, callback) {
   @param obj
 */
 export function watchedEvents(obj) {
-  var listeners = obj['__ember_meta__'].listeners, ret = [];
-
-  if (listeners) {
-    for (var eventName in listeners) {
-      if (eventName !== '__source__' &&
-          listeners[eventName]) {
-        ret.push(eventName);
-      }
-    }
-  }
-  return ret;
+  return metaFor(obj).watchedEvents();
 }
 
 /**
@@ -315,22 +197,21 @@ export function watchedEvents(obj) {
   @param {Array} params Optional parameters for each listener.
   @param {Array} actions Optional array of actions (listeners).
   @return true
+  @public
 */
 export function sendEvent(obj, eventName, params, actions) {
-  // first give object a chance to handle it
-  if (obj !== Ember && 'function' === typeof obj.sendEvent) {
-    obj.sendEvent(eventName, params);
-  }
-
   if (!actions) {
-    var meta = obj['__ember_meta__'];
-    actions = meta && meta.listeners && meta.listeners[eventName];
+    var meta = peekMeta(obj);
+    actions = meta && meta.matchingListeners(eventName);
   }
 
-  if (!actions) { return; }
+  if (!actions || actions.length === 0) { return; }
 
   for (var i = actions.length - 3; i >= 0; i -= 3) { // looping in reverse for once listeners
-    var target = actions[i], method = actions[i+1], flags = actions[i+2];
+    var target = actions[i];
+    var method = actions[i + 1];
+    var flags = actions[i + 2];
+
     if (!method) { continue; }
     if (flags & SUSPENDED) { continue; }
     if (flags & ONCE) { removeListener(obj, eventName, target, method); }
@@ -360,10 +241,9 @@ export function sendEvent(obj, eventName, params, actions) {
   @param {String} eventName
 */
 export function hasListeners(obj, eventName) {
-  var meta = obj['__ember_meta__'];
-  var actions = meta && meta.listeners && meta.listeners[eventName];
-
-  return !!(actions && actions.length);
+  var meta = peekMeta(obj);
+  if (!meta) { return false; }
+  return meta.matchingListeners(eventName).length > 0;
 }
 
 /**
@@ -375,14 +255,14 @@ export function hasListeners(obj, eventName) {
 */
 export function listenersFor(obj, eventName) {
   var ret = [];
-  var meta = obj['__ember_meta__'];
-  var actions = meta && meta.listeners && meta.listeners[eventName];
+  var meta = peekMeta(obj);
+  var actions = meta && meta.matchingListeners(eventName);
 
   if (!actions) { return ret; }
 
   for (var i = 0, l = actions.length; i < l; i += 3) {
     var target = actions[i];
-    var method = actions[i+1];
+    var method = actions[i + 1];
     ret.push([target, method]);
   }
 
@@ -411,14 +291,11 @@ export function listenersFor(obj, eventName) {
   @param {String} eventNames*
   @param {Function} func
   @return func
+  @public
 */
-export function on(){
-  var func = a_slice.call(arguments, -1)[0];
-  var events = a_slice.call(arguments, 0, -1);
+export function on(...args) {
+  var func = args.pop();
+  var events = args;
   func.__ember_listens__ = events;
   return func;
 }
-
-export {
-  removeListener
-};

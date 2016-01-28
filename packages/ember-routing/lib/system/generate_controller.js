@@ -1,6 +1,5 @@
-import Ember from "ember-metal/core"; // Logger
-import { get } from "ember-metal/property_get";
-import { isArray } from "ember-metal/utils";
+import { info } from 'ember-metal/debug';
+import { get } from 'ember-metal/property_get';
 
 /**
 @module ember
@@ -10,42 +9,24 @@ import { isArray } from "ember-metal/utils";
 /**
   Generates a controller factory
 
-  The type of the generated controller factory is derived
-  from the context. If the context is an array an array controller
-  is generated, if an object, an object controller otherwise, a basic
-  controller is generated.
-
-  You can customize your generated controllers by defining
-  `App.ObjectController` or `App.ArrayController`.
-
   @for Ember
   @method generateControllerFactory
   @private
 */
 
-export function generateControllerFactory(container, controllerName, context) {
-  var Factory, fullName, factoryName, controllerType;
+export function generateControllerFactory(owner, controllerName, context) {
+  var Factory, fullName;
 
-  if (context && isArray(context)) {
-    controllerType = 'array';
-  } else if (context) {
-    controllerType = 'object';
-  } else {
-    controllerType = 'basic';
-  }
-
-  factoryName = 'controller:' + controllerType;
-
-  Factory = container.lookupFactory(factoryName).extend({
+  Factory = owner._lookupFactory('controller:basic').extend({
     isGenerated: true,
-    toString: function() {
-      return "(generated " + controllerName + " controller)";
+    toString() {
+      return `(generated ${controllerName} controller)`;
     }
   });
 
-  fullName = 'controller:' + controllerName;
+  fullName = `controller:${controllerName}`;
 
-  container.register(fullName,  Factory);
+  owner.register(fullName, Factory);
 
   return Factory;
 }
@@ -63,13 +44,14 @@ export function generateControllerFactory(container, controllerName, context) {
   @private
   @since 1.3.0
 */
-export default function generateController(container, controllerName, context) {
-  generateControllerFactory(container, controllerName, context);
-  var fullName = 'controller:' + controllerName;
-  var instance = container.lookup(fullName);
+export default function generateController(owner, controllerName, context) {
+  generateControllerFactory(owner, controllerName, context);
+
+  var fullName = `controller:${controllerName}`;
+  var instance = owner.lookup(fullName);
 
   if (get(instance, 'namespace.LOG_ACTIVE_GENERATION')) {
-    Ember.Logger.info("generated -> " + fullName, { fullName: fullName });
+    info(`generated -> ${fullName}`, { fullName: fullName });
   }
 
   return instance;

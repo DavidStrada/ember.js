@@ -1,56 +1,61 @@
-import InjectedProperty from "ember-metal/injected_property";
+/* global EmberDev */
+
+import InjectedProperty from 'ember-metal/injected_property';
+import inject from 'ember-runtime/inject';
 import {
-  createInjectionHelper,
-  default as inject
-} from "ember-runtime/inject";
-import Container from "ember-runtime/system/container";
-import Object from "ember-runtime/system/object";
+  createInjectionHelper
+} from 'ember-runtime/inject';
+import Object from 'ember-runtime/system/object';
+import buildOwner from 'container/tests/test-helpers/build-owner';
 
-if (Ember.FEATURES.isEnabled('ember-metal-injected-properties')) {
-  QUnit.module('inject');
+QUnit.module('inject');
 
-  test("calling `inject` directly should error", function() {
-    throws(function() {
-      inject('foo');
-    }, /Injected properties must be created through helpers/);
-  });
+QUnit.test('calling `inject` directly should error', function() {
+  expectAssertion(function() {
+    inject('foo');
+  }, /Injected properties must be created through helpers/);
+});
 
-  test("injection type validation function is run once at mixin time", function() {
+if (!EmberDev.runningProdBuild) {
+  // this check is done via an assertion which is stripped from
+  // production builds
+  QUnit.test('injection type validation is run when first looked up', function() {
     expect(1);
 
     createInjectionHelper('foo', function() {
-      ok(true, 'should call validation function');
+      ok(true, 'should call validation method');
     });
+
+    let owner = buildOwner();
 
     var AnObject = Object.extend({
       bar: inject.foo(),
       baz: inject.foo()
     });
 
-    // Prototype chains are lazy, make sure it's evaluated
-    AnObject.proto();
-  });
-
-  test("attempting to inject a nonexistent container key should error", function() {
-    var container = new Container();
-    var AnObject = Object.extend({
-      container: container,
-      foo: new InjectedProperty('bar', 'baz')
-    });
-
-    container.register('foo:main', AnObject);
-
-    throws(function() {
-      container.lookup('foo:main');
-    }, /Attempting to inject an unknown injection: `bar:baz`/);
-  });
-
-  test("factories should return a list of lazy injection full names", function() {
-    var AnObject = Object.extend({
-      foo: new InjectedProperty('foo', 'bar'),
-      bar: new InjectedProperty('quux')
-    });
-
-    deepEqual(AnObject.lazyInjections(), { 'foo': 'foo:bar', 'bar': 'quux:bar' }, "should return injected container keys");
+    owner.register('foo:main', AnObject);
+    owner._lookupFactory('foo:main');
   });
 }
+
+QUnit.test('attempting to inject a nonexistent container key should error', function() {
+  let owner = buildOwner();
+  var AnObject = Object.extend({
+    foo: new InjectedProperty('bar', 'baz')
+  });
+
+  owner.register('foo:main', AnObject);
+
+  throws(function() {
+    owner.lookup('foo:main');
+  }, /Attempting to inject an unknown injection: `bar:baz`/);
+});
+
+QUnit.test('factories should return a list of lazy injection full names', function() {
+  var AnObject = Object.extend({
+    foo: new InjectedProperty('foo', 'bar'),
+    bar: new InjectedProperty('quux')
+  });
+
+  deepEqual(AnObject._lazyInjections(), { 'foo': 'foo:bar', 'bar': 'quux:bar' }, 'should return injected container keys');
+});

@@ -1,59 +1,46 @@
-import { get } from "ember-metal/property_get";
-import EmberError from "ember-metal/error";
-import run from "ember-metal/run_loop";
-import jQuery from "ember-views/system/jquery";
-import Test from "ember-testing/test";
+import { get } from 'ember-metal/property_get';
+import EmberError from 'ember-metal/error';
+import run from 'ember-metal/run_loop';
+import jQuery from 'ember-views/system/jquery';
+import Test from 'ember-testing/test';
+import RSVP from 'ember-runtime/ext/rsvp';
 
 /**
-* @module ember
-* @submodule ember-testing
+@module ember
+@submodule ember-testing
 */
 
 var helper = Test.registerHelper;
 var asyncHelper = Test.registerAsyncHelper;
-var countAsync = 0;
 
-function currentRouteName(app){
-  var appController = app.__container__.lookup('controller:application');
+function currentRouteName(app) {
+  var routingService = app.__container__.lookup('service:-routing');
 
-  return get(appController, 'currentRouteName');
+  return get(routingService, 'currentRouteName');
 }
 
-function currentPath(app){
-  var appController = app.__container__.lookup('controller:application');
+function currentPath(app) {
+  var routingService = app.__container__.lookup('service:-routing');
 
-  return get(appController, 'currentPath');
+  return get(routingService, 'currentPath');
 }
 
-function currentURL(app){
+function currentURL(app) {
   var router = app.__container__.lookup('router:main');
 
   return get(router, 'location').getURL();
 }
 
-function visit(app, url) {
-  var router = app.__container__.lookup('router:main');
-  router.location.setURL(url);
-
-  if (app._readinessDeferrals > 0) {
-    router['initialURL'] = url;
-    run(app, 'advanceReadiness');
-    delete router['initialURL'];
-  } else {
-    run(app, app.handleURL, url);
-  }
-
-  return app.testHelpers.wait();
+function pauseTest() {
+  Test.adapter.asyncStart();
+  return new RSVP.Promise(function() { }, 'TestAdapter paused promise');
 }
 
-function click(app, selector, context) {
-  var $el = app.testHelpers.findWithAssert(selector, context);
-  run($el, 'mousedown');
-
-  if ($el.is(':input')) {
-    var type = $el.prop('type');
+function focus(el) {
+  if (el && el.is(':input, [contenteditable=true]')) {
+    var type = el.prop('type');
     if (type !== 'checkbox' && type !== 'radio' && type !== 'hidden') {
-      run($el, function(){
+      run(el, function() {
         // Firefox does not trigger the `focusin` event if the window
         // does not have focus. If the document doesn't have focus just
         // use trigger('focusin') instead.
@@ -65,6 +52,36 @@ function click(app, selector, context) {
       });
     }
   }
+}
+
+function visit(app, url) {
+  var router = app.__container__.lookup('router:main');
+  var shouldHandleURL = false;
+
+  app.boot().then(function() {
+    router.location.setURL(url);
+
+    if (shouldHandleURL) {
+      run(app.__deprecatedInstance__, 'handleURL', url);
+    }
+  });
+
+  if (app._readinessDeferrals > 0) {
+    router['initialURL'] = url;
+    run(app, 'advanceReadiness');
+    delete router['initialURL'];
+  } else {
+    shouldHandleURL = true;
+  }
+
+  return app.testHelpers.wait();
+}
+
+function click(app, selector, context) {
+  var $el = app.testHelpers.findWithAssert(selector, context);
+  run($el, 'mousedown');
+
+  focus($el);
 
   run($el, 'mouseup');
   run($el, 'click');
@@ -72,7 +89,7 @@ function click(app, selector, context) {
   return app.testHelpers.wait();
 }
 
-function triggerEvent(app, selector, contextOrType, typeOrOptions, possibleOptions){
+function triggerEvent(app, selector, contextOrType, typeOrOptions, possibleOptions) {
   var arity = arguments.length;
   var context, type, options;
 
@@ -84,7 +101,7 @@ function triggerEvent(app, selector, contextOrType, typeOrOptions, possibleOptio
     options = {};
   } else if (arity === 4) {
     // context and options are optional, so this is
-    if (typeof typeOrOptions === "object") {  // either
+    if (typeof typeOrOptions === 'object') {  // either
       // app, selector, type, options
       context = null;
       type = contextOrType;
@@ -133,8 +150,11 @@ function fillIn(app, selector, contextOrText, text) {
     context = contextOrText;
   }
   $el = app.testHelpers.findWithAssert(selector, context);
+  focus($el);
   run(function() {
-    $el.val(text).change();
+    $el.val(text);
+    $el.trigger('input');
+    $el.change();
   });
   return app.testHelpers.wait();
 }
@@ -142,7 +162,7 @@ function fillIn(app, selector, contextOrText, text) {
 function findWithAssert(app, selector, context) {
   var $el = app.testHelpers.find(selector, context);
   if ($el.length === 0) {
-    throw new EmberError("Element " + selector + " not found.");
+    throw new EmberError('Element ' + selector + ' not found.');
   }
   return $el;
 }
@@ -160,16 +180,13 @@ function andThen(app, callback) {
 }
 
 function wait(app, value) {
-  return Test.promise(function(resolve) {
-    // If this is the first async promise, kick off the async test
-    if (++countAsync === 1) {
-      Test.adapter.asyncStart();
-    }
-
+  return new RSVP.Promise(function(resolve) {
     // Every 10ms, poll for the async thing to have finished
     var watcher = setInterval(function() {
+      var router = app.__container__.lookup('router:main');
+
       // 1. If the router is loading, keep polling
-      var routerIsLoading = !!app.__container__.lookup('router:main').router.activeTransition;
+      var routerIsLoading = router.router && !!router.router.activeTransition;
       if (routerIsLoading) { return; }
 
       // 2. If there are pending Ajax requests, keep polling
@@ -181,129 +198,131 @@ function wait(app, value) {
         var context = waiter[0];
         var callback = waiter[1];
         return !callback.call(context);
-      })) { return; }
+      })) {
+        return;
+      }
       // Stop polling
       clearInterval(watcher);
-
-      // If this is the last async promise, end the async test
-      if (--countAsync === 0) {
-        Test.adapter.asyncEnd();
-      }
 
       // Synchronously resolve the promise
       run(null, resolve, value);
     }, 10);
   });
-
 }
 
 
 /**
-* Loads a route, sets up any controllers, and renders any templates associated
-* with the route as though a real user had triggered the route change while
-* using your app.
-*
-* Example:
-*
-* ```javascript
-* visit('posts/index').then(function() {
-*   // assert something
-* });
-* ```
-*
-* @method visit
-* @param {String} url the name of the route
-* @return {RSVP.Promise}
+  Loads a route, sets up any controllers, and renders any templates associated
+  with the route as though a real user had triggered the route change while
+  using your app.
+
+  Example:
+
+  ```javascript
+  visit('posts/index').then(function() {
+    // assert something
+  });
+  ```
+
+  @method visit
+  @param {String} url the name of the route
+  @return {RSVP.Promise}
+  @public
 */
 asyncHelper('visit', visit);
 
 /**
-* Clicks an element and triggers any actions triggered by the element's `click`
-* event.
-*
-* Example:
-*
-* ```javascript
-* click('.some-jQuery-selector').then(function() {
-*   // assert something
-* });
-* ```
-*
-* @method click
-* @param {String} selector jQuery selector for finding element on the DOM
-* @return {RSVP.Promise}
+  Clicks an element and triggers any actions triggered by the element's `click`
+  event.
+
+  Example:
+
+  ```javascript
+  click('.some-jQuery-selector').then(function() {
+    // assert something
+  });
+  ```
+
+  @method click
+  @param {String} selector jQuery selector for finding element on the DOM
+  @return {RSVP.Promise}
+  @public
 */
 asyncHelper('click', click);
 
 /**
-* Simulates a key event, e.g. `keypress`, `keydown`, `keyup` with the desired keyCode
-*
-* Example:
-*
-* ```javascript
-* keyEvent('.some-jQuery-selector', 'keypress', 13).then(function() {
-*  // assert something
-* });
-* ```
-*
-* @method keyEvent
-* @param {String} selector jQuery selector for finding element on the DOM
-* @param {String} type the type of key event, e.g. `keypress`, `keydown`, `keyup`
-* @param {Number} keyCode the keyCode of the simulated key event
-* @return {RSVP.Promise}
-* @since 1.5.0
+  Simulates a key event, e.g. `keypress`, `keydown`, `keyup` with the desired keyCode
+
+  Example:
+
+  ```javascript
+  keyEvent('.some-jQuery-selector', 'keypress', 13).then(function() {
+   // assert something
+  });
+  ```
+
+  @method keyEvent
+  @param {String} selector jQuery selector for finding element on the DOM
+  @param {String} type the type of key event, e.g. `keypress`, `keydown`, `keyup`
+  @param {Number} keyCode the keyCode of the simulated key event
+  @return {RSVP.Promise}
+  @since 1.5.0
+  @public
 */
 asyncHelper('keyEvent', keyEvent);
 
 /**
-* Fills in an input element with some text.
-*
-* Example:
-*
-* ```javascript
-* fillIn('#email', 'you@example.com').then(function() {
-*   // assert something
-* });
-* ```
-*
-* @method fillIn
-* @param {String} selector jQuery selector finding an input element on the DOM
-* to fill text with
-* @param {String} text text to place inside the input element
-* @return {RSVP.Promise}
+  Fills in an input element with some text.
+
+  Example:
+
+  ```javascript
+  fillIn('#email', 'you@example.com').then(function() {
+    // assert something
+  });
+  ```
+
+  @method fillIn
+  @param {String} selector jQuery selector finding an input element on the DOM
+  to fill text with
+  @param {String} text text to place inside the input element
+  @return {RSVP.Promise}
+  @public
 */
 asyncHelper('fillIn', fillIn);
 
 /**
-* Finds an element in the context of the app's container element. A simple alias
-* for `app.$(selector)`.
-*
-* Example:
-*
-* ```javascript
-* var $el = find('.my-selector');
-* ```
-*
-* @method find
-* @param {String} selector jQuery string selector for element lookup
-* @return {Object} jQuery object representing the results of the query
+  Finds an element in the context of the app's container element. A simple alias
+  for `app.$(selector)`.
+
+  Example:
+
+  ```javascript
+  var $el = find('.my-selector');
+  ```
+
+  @method find
+  @param {String} selector jQuery string selector for element lookup
+  @return {Object} jQuery object representing the results of the query
+  @public
 */
 helper('find', find);
 
 /**
-* Like `find`, but throws an error if the element selector returns no results.
-*
-* Example:
-*
-* ```javascript
-* var $el = findWithAssert('.doesnt-exist'); // throws error
-* ```
-*
-* @method findWithAssert
-* @param {String} selector jQuery selector string for finding an element within
-* the DOM
-* @return {Object} jQuery object representing the results of the query
-* @throws {Error} throws error if jQuery object returned has a length of 0
+  Like `find`, but throws an error if the element selector returns no results.
+
+  Example:
+
+  ```javascript
+  var $el = findWithAssert('.doesnt-exist'); // throws error
+  ```
+
+  @method findWithAssert
+  @param {String} selector jQuery selector string for finding an element within
+  the DOM
+  @return {Object} jQuery object representing the results of the query
+  @throws {Error} throws error if jQuery object returned has a length of 0
+  @public
 */
 helper('findWithAssert', findWithAssert);
 
@@ -320,7 +339,7 @@ helper('findWithAssert', findWithAssert);
   Ember.Test.registerAsyncHelper('loginUser', function(app, username, password) {
     visit('secured/path/here')
     .fillIn('#username', username)
-    .fillIn('#password', username)
+    .fillIn('#password', password)
     .click('.submit')
 
     return app.testHelpers.wait();
@@ -329,6 +348,7 @@ helper('findWithAssert', findWithAssert);
   @method wait
   @param {Object} value The value to be returned.
   @return {RSVP.Promise}
+  @public
 */
 asyncHelper('wait', wait);
 asyncHelper('andThen', andThen);
@@ -340,8 +360,8 @@ asyncHelper('andThen', andThen);
 Example:
 
 ```javascript
-function validateRouteName(){
-equal(currentRouteName(), 'some.path', "correct route was transitioned into.");
+function validateRouteName() {
+  equal(currentRouteName(), 'some.path', "correct route was transitioned into.");
 }
 
 visit('/some/path').then(validateRouteName)
@@ -350,6 +370,7 @@ visit('/some/path').then(validateRouteName)
 @method currentRouteName
 @return {Object} The name of the currently active route.
 @since 1.5.0
+@public
 */
 helper('currentRouteName', currentRouteName);
 
@@ -359,8 +380,8 @@ helper('currentRouteName', currentRouteName);
 Example:
 
 ```javascript
-function validateURL(){
-equal(currentPath(), 'some.path.index', "correct path was transitioned into.");
+function validateURL() {
+  equal(currentPath(), 'some.path.index', "correct path was transitioned into.");
 }
 
 click('#some-link-id').then(validateURL);
@@ -369,6 +390,7 @@ click('#some-link-id').then(validateURL);
 @method currentPath
 @return {Object} The currently active path.
 @since 1.5.0
+@public
 */
 helper('currentPath', currentPath);
 
@@ -378,8 +400,8 @@ helper('currentPath', currentPath);
 Example:
 
 ```javascript
-function validateURL(){
-equal(currentURL(), '/some/path', "correct URL was transitioned into.");
+function validateURL() {
+  equal(currentURL(), '/some/path', "correct URL was transitioned into.");
 }
 
 click('#some-link-id').then(validateURL);
@@ -388,8 +410,29 @@ click('#some-link-id').then(validateURL);
 @method currentURL
 @return {Object} The currently active URL.
 @since 1.5.0
+@public
 */
 helper('currentURL', currentURL);
+
+/**
+ Pauses the current test - this is useful for debugging while testing or for test-driving.
+ It allows you to inspect the state of your application at any point.
+
+ Example (The test will pause before clicking the button):
+
+ ```javascript
+ visit('/')
+ return pauseTest();
+
+ click('.btn');
+ ```
+
+ @since 1.9.0
+ @method pauseTest
+ @return {Object} A promise that will never resolve
+ @public
+*/
+helper('pauseTest', pauseTest);
 
 /**
   Triggers the given DOM event on the element identified by the provided selector.
@@ -414,5 +457,6 @@ helper('currentURL', currentURL);
  @param {Object} [options] The options to be passed to jQuery.Event.
  @return {RSVP.Promise}
  @since 1.5.0
+ @public
 */
 asyncHelper('triggerEvent', triggerEvent);

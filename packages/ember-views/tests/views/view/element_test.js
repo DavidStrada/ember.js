@@ -1,14 +1,16 @@
-import { get } from "ember-metal/property_get";
-import { set } from "ember-metal/property_set";
-import run from "ember-metal/run_loop";
+/*globals EmberDev */
 
-import EmberView from "ember-views/views/view";
-import ContainerView from "ember-views/views/container_view";
+import { get } from 'ember-metal/property_get';
+import { set } from 'ember-metal/property_set';
+import run from 'ember-metal/run_loop';
+
+import EmberView from 'ember-views/views/view';
+import ContainerView from 'ember-views/views/container_view';
 
 var parentView, view;
 
-QUnit.module("Ember.View#element", {
-  teardown: function() {
+QUnit.module('Ember.View#element', {
+  teardown() {
     run(function() {
       if (parentView) { parentView.destroy(); }
       view.destroy();
@@ -16,15 +18,17 @@ QUnit.module("Ember.View#element", {
   }
 });
 
-test("returns null if the view has no element and no parent view", function() {
-  view = EmberView.create() ;
+QUnit.test('returns null if the view has no element and no parent view', function() {
+  view = EmberView.create();
   equal(get(view, 'parentView'), null, 'precond - has no parentView');
   equal(get(view, 'element'), null, 'has no element');
 });
 
-test("returns null if the view has no element and parent view has no element", function() {
+QUnit.test('returns null if the view has no element and parent view has no element', function() {
+  expectDeprecation('Setting `childViews` on a Container is deprecated.');
+
   parentView = ContainerView.create({
-    childViews: [ EmberView.extend() ]
+    childViews: [EmberView.extend()]
   });
   view = get(parentView, 'childViews').objectAt(0);
 
@@ -33,7 +37,7 @@ test("returns null if the view has no element and parent view has no element", f
   equal(get(view, 'element'), null, ' has no element');
 });
 
-test("returns element if you set the value", function() {
+QUnit.test('returns element if you set the value', function() {
   view = EmberView.create();
   equal(get(view, 'element'), null, 'precond- has no element');
 
@@ -43,18 +47,20 @@ test("returns element if you set the value", function() {
   equal(get(view, 'element'), dom, 'now has set element');
 });
 
-test("should not allow the elementId to be changed after inserted", function() {
-  view = EmberView.create({
-    elementId: 'one'
+if (EmberDev && !EmberDev.runningProdBuild) {
+  QUnit.test('should not allow the elementId to be changed after inserted', function() {
+    view = EmberView.create({
+      elementId: 'one'
+    });
+
+    run(function() {
+      view.appendTo('#qunit-fixture');
+    });
+
+    throws(function() {
+      view.set('elementId', 'two');
+    }, 'raises elementId changed exception');
+
+    equal(view.get('elementId'), 'one', 'elementId is still "one"');
   });
-
-  run(function() {
-    view.appendTo('#qunit-fixture');
-  });
-
-  raises(function() {
-    view.set('elementId', 'two');
-  }, "raises elementId changed exception");
-
-  equal(view.get('elementId'), 'one', 'elementId is still "one"');
-});
+}

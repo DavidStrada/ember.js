@@ -1,29 +1,16 @@
 {
   "features": {
-    "ember-routing-named-substates": null,
-    "ember-routing-add-model-option": true,
-    "ember-routing-linkto-target-attribute": true,
-    "ember-routing-will-change-hooks": null,
-    "ember-routing-multi-current-when": true,
-    "ember-routing-auto-location-uses-replace-state-for-history": true,
-    "event-dispatcher-can-disable-event-manager": null,
-    "ember-metal-is-present": true,
-    "property-brace-expansion-improvement": true,
-    "ember-routing-handlebars-action-with-key-code": null,
-    "ember-runtime-item-controller-inline-class": null,
-    "ember-metal-injected-properties": null
-  },
-  "debugStatements": [
-    "Ember.warn",
-    "emberWarn",
-    "Ember.assert",
-    "emberAssert",
-    "Ember.deprecate",
-    "emberDeprecate",
-    "Ember.debug",
-    "emberDebug",
-    "Ember.Logger.info",
-    "Ember.runInDebug",
-    "runInDebug"
-  ]
+    "features-stripped-test": null,
+    "ember-htmlbars-component-generation": null,
+    "ember-application-visit": true,
+    "ember-routing-route-configured-query-params": null,
+    "ember-libraries-isregistered": null,
+    "ember-debug-handlers": true,
+    "ember-routing-routable-components": null,
+    "ember-metal-ember-assign": null,
+    "ember-contextual-components": true,
+    "ember-container-inject-owner": true,
+    "ember-htmlbars-local-lookup": null,
+    "ember-application-engines": null
+  }
 }

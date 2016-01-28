@@ -1,5 +1,6 @@
-import Ember from "ember-metal/core"; // Ember.K
-import EmberError from "ember-metal/error";
+import EmberError from 'ember-metal/error';
+import { get } from 'ember-metal/property_get';
+import { MUTABLE_CELL } from 'ember-views/compat/attrs-proxy';
 
 /**
 @module ember
@@ -7,29 +8,41 @@ import EmberError from "ember-metal/error";
 */
 export default {
   // appendChild is only legal while rendering the buffer.
-  appendChild: function() {
-    throw new EmberError("You can't use appendChild outside of the rendering process");
+  appendChild() {
+    throw new EmberError('You can\'t use appendChild outside of the rendering process');
   },
 
-  $: function() {
+  $() {
     return undefined;
   },
 
-  getElement: function() {
+  getElement() {
     return null;
   },
 
+  legacyPropertyDidChange(view, key) {
+    let attrs = view.attrs;
+    if (attrs && key in attrs) {
+      let possibleCell = attrs[key];
+
+      if (possibleCell && possibleCell[MUTABLE_CELL]) {
+        let value = get(view, key);
+        if (value === possibleCell.value) { return; }
+        possibleCell.update(value);
+      }
+    }
+  },
+
   // Handle events from `Ember.EventDispatcher`
-  handleEvent: function() {
+  handleEvent() {
     return true; // continue event propagation
   },
 
-  destroyElement: function(view) {
-    if (view._renderer)
-      view._renderer.remove(view, false);
-    return view;
-  },
+  cleanup() { } ,
+  destroyElement() { },
 
-  rerender: Ember.K,
-  invokeObserver: Ember.K
+  rerender(view) {
+    view.renderer.ensureViewNotRendering(view);
+  },
+  invokeObserver() { }
 };

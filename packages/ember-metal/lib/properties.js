@@ -2,16 +2,10 @@
 @module ember-metal
 */
 
-import Ember from "ember-metal/core";
-import { meta as metaFor } from "ember-metal/utils";
-import {
-  defineProperty as objectDefineProperty,
-  hasPropertyAccessors
-} from "ember-metal/platform";
-import { overrideChains } from "ember-metal/property_events";
-import { get } from "ember-metal/property_get";
-import { set } from "ember-metal/property_set";
-
+import { assert } from 'ember-metal/debug';
+import isEnabled from 'ember-metal/features';
+import { meta as metaFor } from 'ember-metal/meta';
+import { overrideChains } from 'ember-metal/property_events';
 // ..........................................................
 // DESCRIPTOR
 //
@@ -20,28 +14,57 @@ import { set } from "ember-metal/property_set";
   Objects of this type can implement an interface to respond to requests to
   get and set. The default implementation handles simple properties.
 
-  You generally won't need to create or subclass this directly.
-
   @class Descriptor
-  @namespace Ember
   @private
-  @constructor
 */
-export function Descriptor() {}
+export function Descriptor() {
+  this.isDescriptor = true;
+}
 
+const REDEFINE_SUPPORTED = (function () {
+  // https://github.com/spalger/kibana/commit/b7e35e6737df585585332857a4c397dc206e7ff9
+  var a = Object.create(Object.prototype, {
+    prop: {
+      configurable: true,
+      value: 1
+    }
+  });
+
+  Object.defineProperty(a, 'prop', {
+    configurable: true,
+    value: 2
+  });
+
+  return a.prop === 2;
+}());
 // ..........................................................
 // DEFINING PROPERTIES API
 //
 
-export function MANDATORY_SETTER_FUNCTION(value) {
-  Ember.assert("You must use Ember.set() to access this property (of " + this + ")", false);
+export function MANDATORY_SETTER_FUNCTION(name) {
+  function SETTER_FUNCTION(value) {
+    assert(`You must use Ember.set() to set the \`${name}\` property (of ${this}) to \`${value}\`.`, false);
+  }
+
+  SETTER_FUNCTION.isMandatorySetter = true;
+  return SETTER_FUNCTION;
 }
 
 export function DEFAULT_GETTER_FUNCTION(name) {
   return function GETTER_FUNCTION() {
     var meta = this['__ember_meta__'];
-    return meta && meta.values[name];
+    return meta && meta.peekValues(name);
   };
+}
+
+export function INHERITING_GETTER_FUNCTION(name) {
+  function IGETTER_FUNCTION() {
+    var proto = Object.getPrototypeOf(this);
+    return proto && proto[name];
+  }
+
+  IGETTER_FUNCTION.isInheritingGetter = true;
+  return IGETTER_FUNCTION;
 }
 
 /**
@@ -54,7 +77,7 @@ export function DEFAULT_GETTER_FUNCTION(name) {
   properties and other special descriptors.
 
   Normally this method takes only three parameters. However if you pass an
-  instance of `Ember.Descriptor` as the third param then you can pass an
+  instance of `Descriptor` as the third param then you can pass an
   optional value as the fourth parameter. This is often more efficient than
   creating new descriptor hashes for each property.
 
@@ -83,59 +106,65 @@ export function DEFAULT_GETTER_FUNCTION(name) {
   @for Ember
   @param {Object} obj the object to define this property on. This may be a prototype.
   @param {String} keyName the name of the property
-  @param {Ember.Descriptor} [desc] an instance of `Ember.Descriptor` (typically a
+  @param {Descriptor} [desc] an instance of `Descriptor` (typically a
     computed property) or an ES5 descriptor.
     You must provide this or `data` but not both.
   @param {*} [data] something other than a descriptor, that will
     become the explicit value of this property.
 */
 export function defineProperty(obj, keyName, desc, data, meta) {
-  var descs, existingDesc, watching, value;
+  var possibleDesc, existingDesc, watching, value;
 
-  if (!meta) meta = metaFor(obj);
-  descs = meta.descs;
-  existingDesc = meta.descs[keyName];
-  var watchEntry = meta.watching[keyName];
+  if (!meta) {
+    meta = metaFor(obj);
+  }
+  var watchEntry = meta.peekWatching(keyName);
+  possibleDesc = obj[keyName];
+  existingDesc = (possibleDesc !== null && typeof possibleDesc === 'object' && possibleDesc.isDescriptor) ? possibleDesc : undefined;
 
   watching = watchEntry !== undefined && watchEntry > 0;
 
-  if (existingDesc instanceof Descriptor) {
+  if (existingDesc) {
     existingDesc.teardown(obj, keyName);
   }
 
   if (desc instanceof Descriptor) {
     value = desc;
-
-    descs[keyName] = desc;
-    if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-      if (watching && hasPropertyAccessors) {
-        objectDefineProperty(obj, keyName, {
+    if (isEnabled('mandatory-setter')) {
+      if (watching) {
+        Object.defineProperty(obj, keyName, {
           configurable: true,
           enumerable: true,
           writable: true,
-          value: undefined // make enumerable
+          value: value
         });
       } else {
-        obj[keyName] = undefined; // make enumerable
+        obj[keyName] = value;
       }
     } else {
-      obj[keyName] = undefined; // make enumerable
+      obj[keyName] = value;
     }
     if (desc.setup) { desc.setup(obj, keyName); }
   } else {
-    descs[keyName] = undefined; // shadow descriptor in proto
     if (desc == null) {
       value = data;
 
-      if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-        if (watching && hasPropertyAccessors) {
-          meta.values[keyName] = data;
-          objectDefineProperty(obj, keyName, {
+      if (isEnabled('mandatory-setter')) {
+        if (watching) {
+          meta.writeValues(keyName, data);
+
+          let defaultDescriptor = {
             configurable: true,
             enumerable: true,
-            set: MANDATORY_SETTER_FUNCTION,
+            set: MANDATORY_SETTER_FUNCTION(keyName),
             get: DEFAULT_GETTER_FUNCTION(keyName)
-          });
+          };
+
+          if (REDEFINE_SUPPORTED) {
+            Object.defineProperty(obj, keyName, defaultDescriptor);
+          } else {
+            handleBrokenPhantomDefineProperty(obj, keyName, defaultDescriptor);
+          }
         } else {
           obj[keyName] = data;
         }
@@ -145,8 +174,8 @@ export function defineProperty(obj, keyName, desc, data, meta) {
     } else {
       value = desc;
 
-      // compatibility with ES5
-      objectDefineProperty(obj, keyName, desc);
+      // fallback to ES5
+      Object.defineProperty(obj, keyName, desc);
     }
   }
 
@@ -161,29 +190,8 @@ export function defineProperty(obj, keyName, desc, data, meta) {
   return this;
 }
 
-/**
-  Used internally to allow changing properties in a backwards compatible way, and print a helpful
-  deprecation warning.
-
-  @method deprecateProperty
-  @param {Object} object The object to add the deprecated property to.
-  @param {String} deprecatedKey The property to add (and print deprecation warnings upon accessing).
-  @param {String} newKey The property that will be aliased.
-  @private
-  @since 1.7.0
-*/
-
-export function deprecateProperty(object, deprecatedKey, newKey) {
-  function deprecate() {
-    Ember.deprecate('Usage of `' + deprecatedKey + '` is deprecated, use `' + newKey + '` instead.');
-  }
-
-  if (hasPropertyAccessors) {
-    defineProperty(object, deprecatedKey, {
-        configurable: true,
-        enumerable: false,
-        set: function(value) { deprecate(); set(this, newKey, value); },
-        get: function() { deprecate(); return get(this, newKey); }
-    });
-  }
+function handleBrokenPhantomDefineProperty(obj, keyName, desc) {
+  // https://github.com/ariya/phantomjs/issues/11856
+  Object.defineProperty(obj, keyName, { configurable: true, writable: true, value: 'iCry' });
+  Object.defineProperty(obj, keyName, desc);
 }

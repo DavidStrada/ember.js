@@ -1,7 +1,7 @@
-import Ember from 'ember-metal/core'; // Ember.deprecate
+import { deprecate } from 'ember-metal/debug';
 import { Mixin } from 'ember-metal/mixin';
 
-/**
+/*
   The ControllerContentModelAliasDeprecation mixin is used to provide a useful
   deprecation warning when specifying `content` directly on a `Ember.Controller`
   (without also specifying `model`).
@@ -11,16 +11,9 @@ import { Mixin } from 'ember-metal/mixin';
 
   This change reduces many caveats with model/content, and also sets a
   simple ground rule: Never set a controllers content, rather always set
-  it's model and ember will do the right thing.
+  its model and ember will do the right thing.
 
-
-  `Ember.ControllerContentModelAliasDeprecation` is used internally by Ember in
-  `Ember.Controller`.
-
-  @class ControllerContentModelAliasDeprecation
-  @namespace Ember
-  @private
-  @since 1.7.0
+  Used internally by Ember in `Ember.Controller`.
 */
 export default Mixin.create({
   /**
@@ -35,10 +28,10 @@ export default Mixin.create({
     @method willMergeMixin
     @since 1.4.0
   */
-  willMergeMixin: function(props) {
+  willMergeMixin(props) {
     // Calling super is only OK here since we KNOW that
     // there is another Mixin loaded first.
-    this._super.apply(this, arguments);
+    this._super(...arguments);
 
     var modelSpecified = !!props.model;
 
@@ -46,7 +39,11 @@ export default Mixin.create({
       props.model = props.content;
       delete props['content'];
 
-      Ember.deprecate('Do not specify `content` on a Controller, use `model` instead.', false);
+      deprecate(
+        'Do not specify `content` on a Controller, use `model` instead.',
+        false,
+        { id: 'ember-runtime.will-merge-mixin', until: '3.0.0' }
+      );
     }
   }
 });

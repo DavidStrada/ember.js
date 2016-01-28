@@ -1,17 +1,17 @@
-import testBoth from 'ember-metal/tests/props_helper';
+import { testBoth } from 'ember-metal/tests/props_helper';
 import {
   watch,
   unwatch
-} from "ember-metal/watching";
+} from 'ember-metal/watching';
 import { defineProperty } from 'ember-metal/properties';
-import { addListener } from "ember-metal/events";
+import { addListener } from 'ember-metal/events';
 import { computed } from 'ember-metal/computed';
 import { set } from 'ember-metal/property_set';
 
 var willCount, didCount;
 
 QUnit.module('unwatch', {
-  setup: function() {
+  setup() {
     willCount = didCount = 0;
   }
 });
@@ -26,11 +26,15 @@ function addListeners(obj, keyPath) {
 }
 
 testBoth('unwatching a computed property - regular get/set', function(get, set) {
-
   var obj = {};
-  defineProperty(obj, 'foo', computed(function(keyName, value) {
-    if (value !== undefined) this.__foo = value;
-    return this.__foo;
+  defineProperty(obj, 'foo', computed({
+    get: function() {
+      return this.__foo;
+    },
+    set: function(keyName, value) {
+      this.__foo = value;
+      return this.__foo;
+    }
   }));
   addListeners(obj, 'foo');
 
@@ -48,7 +52,6 @@ testBoth('unwatching a computed property - regular get/set', function(get, set) 
 
 
 testBoth('unwatching a regular property - regular get/set', function(get, set) {
-
   var obj = { foo: 'BIFF' };
   addListeners(obj, 'foo');
 
@@ -64,8 +67,7 @@ testBoth('unwatching a regular property - regular get/set', function(get, set) {
   equal(didCount, 0, 'should NOT have invoked didCount');
 });
 
-test('unwatching should be nested', function() {
-
+QUnit.test('unwatching should be nested', function() {
   var obj = { foo: 'BIFF' };
   addListeners(obj, 'foo');
 
@@ -89,7 +91,6 @@ test('unwatching should be nested', function() {
 });
 
 testBoth('unwatching "length" property on an object', function(get, set) {
-
   var obj = { foo: 'RUN' };
   addListeners(obj, 'length');
 
@@ -105,5 +106,15 @@ testBoth('unwatching "length" property on an object', function(get, set) {
   set(obj, 'length', '5k');
   equal(willCount, 0, 'should NOT have invoked willCount');
   equal(didCount, 0, 'should NOT have invoked didCount');
-
 });
+
+testBoth('unwatching should not destroy non MANDATORY_SETTER descriptor', function(get, set) {
+  var obj = { get foo() { return 'RUN'; } };
+
+  equal(obj.foo, 'RUN', 'obj.foo');
+  watch(obj, 'foo');
+  equal(obj.foo, 'RUN', 'obj.foo after watch');
+  unwatch(obj, 'foo');
+  equal(obj.foo, 'RUN', 'obj.foo after unwatch');
+});
+

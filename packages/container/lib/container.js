@@ -1,658 +1,201 @@
-import Ember from 'ember-metal/core'; // Ember.assert
-import emberKeys from "ember-metal/keys";
+import Ember from 'ember-metal/core';
+import { assert, deprecate } from 'ember-metal/debug';
 import dictionary from 'ember-metal/dictionary';
+import isEnabled from 'ember-metal/features';
+import { setOwner, OWNER } from './owner';
+import { buildFakeContainerWithDeprecations } from 'ember-runtime/mixins/container_proxy';
+import symbol from 'ember-metal/symbol';
 
-// A lightweight container that helps to assemble and decouple components.
-// Public api for the container is still in flux.
-// The public api, specified on the application namespace should be considered the stable api.
-function Container(parent) {
-  this.parent = parent;
-  this.children = [];
+const CONTAINER_OVERRIDE = symbol('CONTAINER_OVERRIDE');
 
-  this.resolver = parent && parent.resolver || function() {};
+/**
+ A container used to instantiate and cache objects.
 
-  this.registry       = dictionary(parent ? parent.registry : null);
-  this.cache          = dictionary(parent ? parent.cache : null);
-  this.factoryCache   = dictionary(parent ? parent.factoryCache : null);
-  this.resolveCache   = dictionary(parent ? parent.resolveCache : null);
-  this.typeInjections = dictionary(parent ? parent.typeInjections : null);
-  this.injections     = dictionary(null);
-  this.normalizeCache = dictionary(null);
+ Every `Container` must be associated with a `Registry`, which is referenced
+ to determine the factory and options that should be used to instantiate
+ objects.
 
-  this.factoryTypeInjections = dictionary(parent ? parent.factoryTypeInjections : null);
-  this.factoryInjections     = dictionary(null);
+ The public API for `Container` is still in flux and should not be considered
+ stable.
 
-  this._options     = dictionary(parent ? parent._options : null);
-  this._typeOptions = dictionary(parent ? parent._typeOptions : null);
+ @private
+ @class Container
+ */
+function Container(registry, options) {
+  this.registry        = registry;
+  this.owner           = options && options.owner ? options.owner : null;
+  this.cache           = dictionary(options && options.cache ? options.cache : null);
+  this.factoryCache    = dictionary(options && options.factoryCache ? options.factoryCache : null);
+  this.validationCache = dictionary(options && options.validationCache ? options.validationCache : null);
+
+  if (isEnabled('ember-container-inject-owner')) {
+    this._fakeContainerToInject = buildFakeContainerWithDeprecations(this);
+    this[CONTAINER_OVERRIDE] = undefined;
+  }
 }
 
 Container.prototype = {
+  /**
+   @private
+   @property owner
+   @type Object
+   */
+  owner: null,
 
   /**
-    @property parent
-    @type Container
-    @default null
-  */
-  parent: null,
-
-  /**
-    @property children
-    @type Array
-    @default []
-  */
-  children: null,
-
-  /**
-    @property resolver
-    @type function
-  */
-  resolver: null,
-
-  /**
-    @property registry
-    @type InheritingDict
-  */
+   @private
+   @property registry
+   @type Registry
+   @since 1.11.0
+   */
   registry: null,
 
   /**
-    @property cache
-    @type InheritingDict
-  */
+   @private
+   @property cache
+   @type InheritingDict
+   */
   cache: null,
 
   /**
-    @property typeInjections
-    @type InheritingDict
-  */
-  typeInjections: null,
-
-  /**
-    @property injections
-    @type Object
-    @default {}
-  */
-  injections: null,
-
-  /**
-    @private
-
-    @property _options
-    @type InheritingDict
-    @default null
-  */
-  _options: null,
-
-  /**
-    @private
-
-    @property _typeOptions
-    @type InheritingDict
-  */
-  _typeOptions: null,
-
-  /**
-    Returns a new child of the current container. These children are configured
-    to correctly inherit from the current container.
-
-    @method child
-    @return {Container}
-  */
-  child: function() {
-    var container = new Container(this);
-    this.children.push(container);
-    return container;
-  },
-
-  /**
-    Sets a key-value pair on the current container. If a parent container,
-    has the same key, once set on a child, the parent and child will diverge
-    as expected.
-
-    @method set
-    @param {Object} object
-    @param {String} key
-    @param {any} value
-  */
-  set: function(object, key, value) {
-    object[key] = value;
-  },
-
-  /**
-    Registers a factory for later injection.
-
-    Example:
-
-    ```javascript
-    var container = new Container();
-
-    container.register('model:user', Person, {singleton: false });
-    container.register('fruit:favorite', Orange);
-    container.register('communication:main', Email, {singleton: false});
-    ```
-
-    @method register
-    @param {String} fullName
-    @param {Function} factory
-    @param {Object} options
-  */
-  register: function(fullName, factory, options) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-
-    if (factory === undefined) {
-      throw new TypeError('Attempting to register an unknown factory: `' + fullName + '`');
-    }
-
-    var normalizedName = this.normalize(fullName);
-
-    if (normalizedName in this.cache) {
-      throw new Error('Cannot re-register: `' + fullName +'`, as it has already been looked up.');
-    }
-
-    this.registry[normalizedName] = factory;
-    this._options[normalizedName] = (options || {});
-  },
-
-  /**
-    Unregister a fullName
-
-    ```javascript
-    var container = new Container();
-    container.register('model:user', User);
-
-    container.lookup('model:user') instanceof User //=> true
-
-    container.unregister('model:user')
-    container.lookup('model:user') === undefined //=> true
-    ```
-
-    @method unregister
-    @param {String} fullName
+   @private
+   @property factoryCache
+   @type InheritingDict
    */
-  unregister: function(fullName) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
+  factoryCache: null,
 
-    var normalizedName = this.normalize(fullName);
+  /**
+   @private
+   @property validationCache
+   @type InheritingDict
+   */
+  validationCache: null,
 
-    delete this.registry[normalizedName];
-    delete this.cache[normalizedName];
-    delete this.factoryCache[normalizedName];
-    delete this.resolveCache[normalizedName];
-    delete this._options[normalizedName];
+  /**
+   Given a fullName return a corresponding instance.
+
+   The default behaviour is for lookup to return a singleton instance.
+   The singleton is scoped to the container, allowing multiple containers
+   to all have their own locally scoped singletons.
+
+   ```javascript
+   var registry = new Registry();
+   var container = registry.container();
+
+   registry.register('api:twitter', Twitter);
+
+   var twitter = container.lookup('api:twitter');
+
+   twitter instanceof Twitter; // => true
+
+   // by default the container will return singletons
+   var twitter2 = container.lookup('api:twitter');
+   twitter2 instanceof Twitter; // => true
+
+   twitter === twitter2; //=> true
+   ```
+
+   If singletons are not wanted an optional flag can be provided at lookup.
+
+   ```javascript
+   var registry = new Registry();
+   var container = registry.container();
+
+   registry.register('api:twitter', Twitter);
+
+   var twitter = container.lookup('api:twitter', { singleton: false });
+   var twitter2 = container.lookup('api:twitter', { singleton: false });
+
+   twitter === twitter2; //=> false
+   ```
+
+   @private
+   @method lookup
+   @param {String} fullName
+   @param {Object} [options]
+   @param {String} [options.source] The fullname of the request source (used for local lookup)
+   @return {any}
+   */
+  lookup(fullName, options) {
+    assert('fullName must be a proper full name', this.registry.validateFullName(fullName));
+    return lookup(this, this.registry.normalize(fullName), options);
   },
 
   /**
-    Given a fullName return the corresponding factory.
+   Given a fullName return the corresponding factory.
 
-    By default `resolve` will retrieve the factory from
-    its container's registry.
-
-    ```javascript
-    var container = new Container();
-    container.register('api:twitter', Twitter);
-
-    container.resolve('api:twitter') // => Twitter
-    ```
-
-    Optionally the container can be provided with a custom resolver.
-    If provided, `resolve` will first provide the custom resolver
-    the opportunity to resolve the fullName, otherwise it will fallback
-    to the registry.
-
-    ```javascript
-    var container = new Container();
-    container.resolver = function(fullName) {
-      // lookup via the module system of choice
-    };
-
-    // the twitter factory is added to the module system
-    container.resolve('api:twitter') // => Twitter
-    ```
-
-    @method resolve
-    @param {String} fullName
-    @return {Function} fullName's factory
-  */
-  resolve: function(fullName) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-    return resolve(this, this.normalize(fullName));
+   @private
+   @method lookupFactory
+   @param {String} fullName
+   @param {Object} [options]
+   @param {String} [options.source] The fullname of the request source (used for local lookup)
+   @return {any}
+   */
+  lookupFactory(fullName, options) {
+    assert('fullName must be a proper full name', this.registry.validateFullName(fullName));
+    return factoryFor(this, this.registry.normalize(fullName), options);
   },
 
   /**
-    A hook that can be used to describe how the resolver will
-    attempt to find the factory.
-
-    For example, the default Ember `.describe` returns the full
-    class name (including namespace) where Ember's resolver expects
-    to find the `fullName`.
-
-    @method describe
-    @param {String} fullName
-    @return {string} described fullName
-  */
-  describe: function(fullName) {
-    return fullName;
-  },
-
-  /**
-    A hook to enable custom fullName normalization behaviour
-
-    @method normalizeFullName
-    @param {String} fullName
-    @return {string} normalized fullName
-  */
-  normalizeFullName: function(fullName) {
-    return fullName;
-  },
-
-  /**
-    normalize a fullName based on the applications conventions
-
-    @method normalize
-    @param {String} fullName
-    @return {string} normalized fullName
-  */
-  normalize: function(fullName) {
-    return this.normalizeCache[fullName] || (
-      this.normalizeCache[fullName] = this.normalizeFullName(fullName)
-    );
-  },
-
-  /**
-    @method makeToString
-
-    @param {any} factory
-    @param {string} fullName
-    @return {function} toString function
-  */
-  makeToString: function(factory, fullName) {
-    return factory.toString();
-  },
-
-  /**
-    Given a fullName return a corresponding instance.
-
-    The default behaviour is for lookup to return a singleton instance.
-    The singleton is scoped to the container, allowing multiple containers
-    to all have their own locally scoped singletons.
-
-    ```javascript
-    var container = new Container();
-    container.register('api:twitter', Twitter);
-
-    var twitter = container.lookup('api:twitter');
-
-    twitter instanceof Twitter; // => true
-
-    // by default the container will return singletons
-    var twitter2 = container.lookup('api:twitter');
-    twitter2 instanceof Twitter; // => true
-
-    twitter === twitter2; //=> true
-    ```
-
-    If singletons are not wanted an optional flag can be provided at lookup.
-
-    ```javascript
-    var container = new Container();
-    container.register('api:twitter', Twitter);
-
-    var twitter = container.lookup('api:twitter', { singleton: false });
-    var twitter2 = container.lookup('api:twitter', { singleton: false });
-
-    twitter === twitter2; //=> false
-    ```
-
-    @method lookup
-    @param {String} fullName
-    @param {Object} options
-    @return {any}
-  */
-  lookup: function(fullName, options) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-    return lookup(this, this.normalize(fullName), options);
-  },
-
-  /**
-    Given a fullName return the corresponding factory.
-
-    @method lookupFactory
-    @param {String} fullName
-    @return {any}
-  */
-  lookupFactory: function(fullName) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-    return factoryFor(this, this.normalize(fullName));
-  },
-
-  /**
-    Given a fullName check if the container is aware of its factory
-    or singleton instance.
-
-    @method has
-    @param {String} fullName
-    @return {Boolean}
-  */
-  has: function(fullName) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-    return has(this, this.normalize(fullName));
-  },
-
-  /**
-    Allow registering options for all factories of a type.
-
-    ```javascript
-    var container = new Container();
-
-    // if all of type `connection` must not be singletons
-    container.optionsForType('connection', { singleton: false });
-
-    container.register('connection:twitter', TwitterConnection);
-    container.register('connection:facebook', FacebookConnection);
-
-    var twitter = container.lookup('connection:twitter');
-    var twitter2 = container.lookup('connection:twitter');
-
-    twitter === twitter2; // => false
-
-    var facebook = container.lookup('connection:facebook');
-    var facebook2 = container.lookup('connection:facebook');
-
-    facebook === facebook2; // => false
-    ```
-
-    @method optionsForType
-    @param {String} type
-    @param {Object} options
-  */
-  optionsForType: function(type, options) {
-    if (this.parent) { illegalChildOperation('optionsForType'); }
-
-    this._typeOptions[type] = options;
-  },
-
-  /**
-    @method options
-    @param {String} type
-    @param {Object} options
-  */
-  options: function(type, options) {
-    this.optionsForType(type, options);
-  },
-
-  /**
-    Used only via `injection`.
-
-    Provides a specialized form of injection, specifically enabling
-    all objects of one type to be injected with a reference to another
-    object.
-
-    For example, provided each object of type `controller` needed a `router`.
-    one would do the following:
-
-    ```javascript
-    var container = new Container();
-
-    container.register('router:main', Router);
-    container.register('controller:user', UserController);
-    container.register('controller:post', PostController);
-
-    container.typeInjection('controller', 'router', 'router:main');
-
-    var user = container.lookup('controller:user');
-    var post = container.lookup('controller:post');
-
-    user.router instanceof Router; //=> true
-    post.router instanceof Router; //=> true
-
-    // both controllers share the same router
-    user.router === post.router; //=> true
-    ```
-
-    @private
-    @method typeInjection
-    @param {String} type
-    @param {String} property
-    @param {String} fullName
-  */
-  typeInjection: function(type, property, fullName) {
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-
-    if (this.parent) { illegalChildOperation('typeInjection'); }
-
-    var fullNameType = fullName.split(':')[0];
-    if (fullNameType === type) {
-      throw new Error('Cannot inject a `' + fullName + '` on other ' + type + '(s). Register the `' + fullName + '` as a different type and perform the typeInjection.');
-    }
-
-    addTypeInjection(this.typeInjections, type, property, fullName);
-  },
-
-  /**
-    Defines injection rules.
-
-    These rules are used to inject dependencies onto objects when they
-    are instantiated.
-
-    Two forms of injections are possible:
-
-    * Injecting one fullName on another fullName
-    * Injecting one fullName on a type
-
-    Example:
-
-    ```javascript
-    var container = new Container();
-
-    container.register('source:main', Source);
-    container.register('model:user', User);
-    container.register('model:post', Post);
-
-    // injecting one fullName on another fullName
-    // eg. each user model gets a post model
-    container.injection('model:user', 'post', 'model:post');
-
-    // injecting one fullName on another type
-    container.injection('model', 'source', 'source:main');
-
-    var user = container.lookup('model:user');
-    var post = container.lookup('model:post');
-
-    user.source instanceof Source; //=> true
-    post.source instanceof Source; //=> true
-
-    user.post instanceof Post; //=> true
-
-    // and both models share the same source
-    user.source === post.source; //=> true
-    ```
-
-    @method injection
-    @param {String} factoryName
-    @param {String} property
-    @param {String} injectionName
-  */
-  injection: function(fullName, property, injectionName) {
-    if (this.parent) { illegalChildOperation('injection'); }
-
-    validateFullName(injectionName);
-    var normalizedInjectionName = this.normalize(injectionName);
-
-    if (fullName.indexOf(':') === -1) {
-      return this.typeInjection(fullName, property, normalizedInjectionName);
-    }
-
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-    var normalizedName = this.normalize(fullName);
-
-    if (this.cache[normalizedName]) {
-      throw new Error("Attempted to register an injection for a type that has already been looked up. ('" + normalizedName + "', '" + property + "', '" + injectionName + "')");
-    }
-
-    addInjection(initRules(this.injections, normalizedName), property, normalizedInjectionName);
-  },
-
-
-  /**
-    Used only via `factoryInjection`.
-
-    Provides a specialized form of injection, specifically enabling
-    all factory of one type to be injected with a reference to another
-    object.
-
-    For example, provided each factory of type `model` needed a `store`.
-    one would do the following:
-
-    ```javascript
-    var container = new Container();
-
-    container.register('store:main', SomeStore);
-
-    container.factoryTypeInjection('model', 'store', 'store:main');
-
-    var store = container.lookup('store:main');
-    var UserFactory = container.lookupFactory('model:user');
-
-    UserFactory.store instanceof SomeStore; //=> true
-    ```
-
-    @private
-    @method factoryTypeInjection
-    @param {String} type
-    @param {String} property
-    @param {String} fullName
-  */
-  factoryTypeInjection: function(type, property, fullName) {
-    if (this.parent) { illegalChildOperation('factoryTypeInjection'); }
-
-    addTypeInjection(this.factoryTypeInjections, type, property, this.normalize(fullName));
-  },
-
-  /**
-    Defines factory injection rules.
-
-    Similar to regular injection rules, but are run against factories, via
-    `Container#lookupFactory`.
-
-    These rules are used to inject objects onto factories when they
-    are looked up.
-
-    Two forms of injections are possible:
-
-  * Injecting one fullName on another fullName
-  * Injecting one fullName on a type
-
-    Example:
-
-    ```javascript
-    var container = new Container();
-
-    container.register('store:main', Store);
-    container.register('store:secondary', OtherStore);
-    container.register('model:user', User);
-    container.register('model:post', Post);
-
-    // injecting one fullName on another type
-    container.factoryInjection('model', 'store', 'store:main');
-
-    // injecting one fullName on another fullName
-    container.factoryInjection('model:post', 'secondaryStore', 'store:secondary');
-
-    var UserFactory = container.lookupFactory('model:user');
-    var PostFactory = container.lookupFactory('model:post');
-    var store = container.lookup('store:main');
-
-    UserFactory.store instanceof Store; //=> true
-    UserFactory.secondaryStore instanceof OtherStore; //=> false
-
-    PostFactory.store instanceof Store; //=> true
-    PostFactory.secondaryStore instanceof OtherStore; //=> true
-
-    // and both models share the same source instance
-    UserFactory.store === PostFactory.store; //=> true
-    ```
-
-    @method factoryInjection
-    @param {String} factoryName
-    @param {String} property
-    @param {String} injectionName
-  */
-  factoryInjection: function(fullName, property, injectionName) {
-    if (this.parent) { illegalChildOperation('injection'); }
-
-    var normalizedName = this.normalize(fullName);
-    var normalizedInjectionName = this.normalize(injectionName);
-
-    validateFullName(injectionName);
-
-    if (fullName.indexOf(':') === -1) {
-      return this.factoryTypeInjection(normalizedName, property, normalizedInjectionName);
-    }
-
-    Ember.assert('fullName must be a proper full name', validateFullName(fullName));
-
-    if (this.factoryCache[normalizedName]) {
-      throw new Error('Attempted to register a factoryInjection for a type that has already ' +
-        'been looked up. (\'' + normalizedName + '\', \'' + property + '\', \'' + injectionName + '\')');
-    }
-
-    addInjection(initRules(this.factoryInjections, normalizedName), property, normalizedInjectionName);
-  },
-
-  /**
-    A depth first traversal, destroying the container, its descendant containers and all
-    their managed objects.
-
-    @method destroy
-  */
-  destroy: function() {
-    for (var i = 0, length = this.children.length; i < length; i++) {
-      this.children[i].destroy();
-    }
-
-    this.children = [];
-
+   A depth first traversal, destroying the container, its descendant containers and all
+   their managed objects.
+
+   @private
+   @method destroy
+   */
+  destroy() {
     eachDestroyable(this, function(item) {
-      item.destroy();
+      if (item.destroy) {
+        item.destroy();
+      }
     });
 
-    this.parent = undefined;
     this.isDestroyed = true;
   },
 
   /**
-    @method reset
-  */
-  reset: function() {
-    for (var i = 0, length = this.children.length; i < length; i++) {
-      resetCache(this.children[i]);
-    }
+   Clear either the entire cache or just the cache for a particular key.
 
-    resetCache(this);
+   @private
+   @method reset
+   @param {String} fullName optional key to reset; if missing, resets everything
+   */
+  reset(fullName) {
+    if (arguments.length > 0) {
+      resetMember(this, this.registry.normalize(fullName));
+    } else {
+      resetCache(this);
+    }
+  },
+
+  /**
+   Returns an object that can be used to provide an owner to a
+   manually created instance.
+
+   @private
+   @method ownerInjection
+   @returns { Object }
+  */
+  ownerInjection() {
+    return { [OWNER]: this.owner };
   }
 };
 
-function resolve(container, normalizedName) {
-  var cached = container.resolveCache[normalizedName];
-  if (cached) { return cached; }
-
-  var resolved = container.resolver(normalizedName) || container.registry[normalizedName];
-  container.resolveCache[normalizedName] = resolved;
-
-  return resolved;
+function isSingleton(container, fullName) {
+  return container.registry.getOption(fullName, 'singleton') !== false;
 }
 
-function has(container, fullName){
-  if (container.cache[fullName]) {
-    return true;
+function lookup(container, fullName, options = {}) {
+  if (isEnabled('ember-htmlbars-local-lookup')) {
+    if (options.source) {
+      fullName = container.registry.expandLocalLookup(fullName, options);
+
+      // if expandLocalLookup returns falsey, we do not support local lookup
+      if (!fullName) { return; }
+    }
   }
 
-  return container.resolve(fullName) !== undefined;
-}
-
-function lookup(container, fullName, options) {
-  options = options || {};
-
-  if (container.cache[fullName] && options.singleton !== false) {
+  if (container.cache[fullName] !== undefined && options.singleton !== false) {
     return container.cache[fullName];
   }
 
@@ -667,72 +210,67 @@ function lookup(container, fullName, options) {
   return value;
 }
 
-function illegalChildOperation(operation) {
-  throw new Error(operation + ' is not currently supported on child containers');
+function markInjectionsAsDynamic(injections) {
+  injections._dynamic = true;
 }
 
-function isSingleton(container, fullName) {
-  var singleton = option(container, fullName, 'singleton');
-
-  return singleton !== false;
+function areInjectionsDynamic(injections) {
+  return !!injections._dynamic;
 }
 
-function buildInjections(container, injections) {
+function buildInjections(/* container, ...injections */) {
   var hash = {};
 
-  if (!injections) { return hash; }
+  if (arguments.length > 1) {
+    var container = arguments[0];
+    var injections = [];
+    var injection;
 
-  validateInjections(container, injections);
+    for (var i = 1, l = arguments.length; i < l; i++) {
+      if (arguments[i]) {
+        injections = injections.concat(arguments[i]);
+      }
+    }
 
-  var injection;
+    container.registry.validateInjections(injections);
 
-  for (var i = 0, length = injections.length; i < length; i++) {
-    injection = injections[i];
-    hash[injection.property] = lookup(container, injection.fullName);
+    for (i = 0, l = injections.length; i < l; i++) {
+      injection = injections[i];
+      hash[injection.property] = lookup(container, injection.fullName);
+      if (!isSingleton(container, injection.fullName)) {
+        markInjectionsAsDynamic(hash);
+      }
+    }
   }
 
   return hash;
 }
 
-function validateInjections(container, injections) {
-  if (!injections) { return; }
+function factoryFor(container, fullName, options = {}) {
+  let registry = container.registry;
 
-  var fullName;
+  if (isEnabled('ember-htmlbars-local-lookup')) {
+    if (options.source) {
+      fullName = registry.expandLocalLookup(fullName, options);
 
-  for (var i = 0, length = injections.length; i < length; i++) {
-    fullName = injections[i].fullName;
-
-    if (!container.has(fullName)) {
-      throw new Error('Attempting to inject an unknown injection: `' + fullName + '`');
+      // if expandLocalLookup returns falsey, we do not support local lookup
+      if (!fullName) { return; }
     }
   }
-}
 
-function option(container, fullName, optionName) {
-  var options = container._options[fullName];
-
-  if (options && options[optionName] !== undefined) {
-    return options[optionName];
-  }
-
-  var type = fullName.split(':')[0];
-  options = container._typeOptions[type];
-
-  if (options) {
-    return options[optionName];
-  }
-}
-
-function factoryFor(container, fullName) {
   var cache = container.factoryCache;
   if (cache[fullName]) {
     return cache[fullName];
   }
-  var factory = container.resolve(fullName);
+  var factory = registry.resolve(fullName);
   if (factory === undefined) { return; }
 
   var type = fullName.split(':')[0];
   if (!factory || typeof factory.extend !== 'function' || (!Ember.MODEL_FACTORY_INJECTIONS && type === 'model')) {
+    if (factory && typeof factory._onLookup === 'function') {
+      factory._onLookup(fullName);
+    }
+
     // TODO: think about a 'safe' merge style extension
     // for now just fallback to create time injection
     cache[fullName] = factory;
@@ -740,108 +278,158 @@ function factoryFor(container, fullName) {
   } else {
     var injections = injectionsFor(container, fullName);
     var factoryInjections = factoryInjectionsFor(container, fullName);
+    var cacheable = !areInjectionsDynamic(injections) && !areInjectionsDynamic(factoryInjections);
 
-    factoryInjections._toString = container.makeToString(factory, fullName);
+    factoryInjections._toString = registry.makeToString(factory, fullName);
 
     var injectedFactory = factory.extend(injections);
+
+    // TODO - remove all `container` injections when Ember reaches v3.0.0
+    if (isEnabled('ember-container-inject-owner')) {
+      injectDeprecatedContainer(injectedFactory.prototype, container);
+    } else {
+      injectedFactory.prototype.container = container;
+    }
+
     injectedFactory.reopenClass(factoryInjections);
 
-    cache[fullName] = injectedFactory;
+    if (factory && typeof factory._onLookup === 'function') {
+      factory._onLookup(fullName);
+    }
+
+    if (cacheable) {
+      cache[fullName] = injectedFactory;
+    }
 
     return injectedFactory;
   }
 }
 
 function injectionsFor(container, fullName) {
+  var registry = container.registry;
   var splitName = fullName.split(':');
   var type = splitName[0];
-  var injections = [];
 
-  injections = injections.concat(container.typeInjections[type] || []);
-  injections = injections.concat(container.injections[fullName] || []);
-
-  injections = buildInjections(container, injections);
+  var injections = buildInjections(container,
+                                   registry.getTypeInjections(type),
+                                   registry.getInjections(fullName));
   injections._debugContainerKey = fullName;
-  injections.container = container;
+
+  setOwner(injections, container.owner);
 
   return injections;
 }
 
 function factoryInjectionsFor(container, fullName) {
+  var registry = container.registry;
   var splitName = fullName.split(':');
   var type = splitName[0];
-  var factoryInjections = [];
 
-  factoryInjections = factoryInjections.concat(container.factoryTypeInjections[type] || []);
-  factoryInjections = factoryInjections.concat(container.factoryInjections[fullName] || []);
-
-  factoryInjections = buildInjections(container, factoryInjections);
+  var factoryInjections = buildInjections(container,
+                                          registry.getFactoryTypeInjections(type),
+                                          registry.getFactoryInjections(fullName));
   factoryInjections._debugContainerKey = fullName;
 
   return factoryInjections;
 }
 
-if (Ember.FEATURES.isEnabled('ember-metal-injected-properties')) {
-  var normalizeInjectionsHash = function(hash) {
-    var injections = [];
-
-    for (var key in hash) {
-      if (hash.hasOwnProperty(key)) {
-        Ember.assert("Expected a proper full name, given '" + hash[key] + "'", validateFullName(hash[key]));
-
-        addInjection(injections, key, hash[key]);
-      }
-    }
-
-    return injections;
-  };
-}
-
 function instantiate(container, fullName) {
   var factory = factoryFor(container, fullName);
-  var lazyInjections;
+  var lazyInjections, validationCache;
 
-  if (option(container, fullName, 'instantiate') === false) {
+  if (container.registry.getOption(fullName, 'instantiate') === false) {
     return factory;
   }
 
   if (factory) {
     if (typeof factory.create !== 'function') {
       throw new Error('Failed to create an instance of \'' + fullName + '\'. ' +
-        'Most likely an improperly defined class or an invalid module export.');
+      'Most likely an improperly defined class or an invalid module export.');
     }
 
-    if (Ember.FEATURES.isEnabled('ember-metal-injected-properties')) {
-      // Ensure that all lazy injections are valid at instantiation time
-      if (typeof factory.lazyInjections === 'function') {
-        lazyInjections = factory.lazyInjections();
+    validationCache = container.validationCache;
 
-        validateInjections(container, normalizeInjectionsHash(lazyInjections));
-      }
+    // Ensure that all lazy injections are valid at instantiation time
+    if (!validationCache[fullName] && typeof factory._lazyInjections === 'function') {
+      lazyInjections = factory._lazyInjections();
+      lazyInjections = container.registry.normalizeInjectionsHash(lazyInjections);
+
+      container.registry.validateInjections(lazyInjections);
     }
+
+    validationCache[fullName] = true;
+
+    let obj;
 
     if (typeof factory.extend === 'function') {
       // assume the factory was extendable and is already injected
-      return factory.create();
+      obj = factory.create();
     } else {
       // assume the factory was extendable
       // to create time injections
       // TODO: support new'ing for instantiation and merge injections for pure JS Functions
-      return factory.create(injectionsFor(container, fullName));
+      let injections = injectionsFor(container, fullName);
+
+      // Ensure that a container is available to an object during instantiation.
+      // TODO - remove when Ember reaches v3.0.0
+      if (isEnabled('ember-container-inject-owner')) {
+        // This "fake" container will be replaced after instantiation with a
+        // property that raises deprecations every time it is accessed.
+        injections.container = container._fakeContainerToInject;
+      } else {
+        injections.container = container;
+      }
+
+      obj = factory.create(injections);
+
+      // TODO - remove when Ember reaches v3.0.0
+      if (isEnabled('ember-container-inject-owner')) {
+        if (!Object.isFrozen(obj) && 'container' in obj) {
+          injectDeprecatedContainer(obj, container);
+        }
+      }
     }
+
+    return obj;
   }
+}
+
+// TODO - remove when Ember reaches v3.0.0
+function injectDeprecatedContainer(object, container) {
+  Object.defineProperty(object, 'container', {
+    configurable: true,
+    enumerable: false,
+    get() {
+      deprecate('Using the injected `container` is deprecated. Please use the `getOwner` helper instead to access the owner of this object.',
+                false,
+                { id: 'ember-application.injected-container', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_injected-container-access' });
+      return this[CONTAINER_OVERRIDE] || container;
+    },
+
+    set(value) {
+      deprecate(
+        `Providing the \`container\` property to ${this} is deprecated. Please use \`Ember.setOwner\` or \`owner.ownerInjection()\` instead to provide an owner to the instance being created.`,
+        false,
+        { id: 'ember-application.injected-container', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_injected-container-access' }
+      );
+
+      this[CONTAINER_OVERRIDE] = value;
+
+      return value;
+    }
+  });
 }
 
 function eachDestroyable(container, callback) {
   var cache = container.cache;
-  var keys = emberKeys(cache);
+  var keys = Object.keys(cache);
   var key, value;
 
   for (var i = 0, l = keys.length; i < l; i++) {
     key = keys[i];
     value = cache[key];
 
-    if (option(container, key, 'instantiate') !== false) {
+    if (container.registry.getOption(key, 'instantiate') !== false) {
       callback(value);
     }
   }
@@ -849,43 +437,26 @@ function eachDestroyable(container, callback) {
 
 function resetCache(container) {
   eachDestroyable(container, function(value) {
-    value.destroy();
+    if (value.destroy) {
+      value.destroy();
+    }
   });
 
   container.cache.dict = dictionary(null);
 }
 
-function addTypeInjection(rules, type, property, fullName) {
-  var injections = rules[type];
+function resetMember(container, fullName) {
+  var member = container.cache[fullName];
 
-  if (!injections) {
-    injections = [];
-    rules[type] = injections;
+  delete container.factoryCache[fullName];
+
+  if (member) {
+    delete container.cache[fullName];
+
+    if (member.destroy) {
+      member.destroy();
+    }
   }
-
-  injections.push({
-    property: property,
-    fullName: fullName
-  });
-}
-
-var VALID_FULL_NAME_REGEXP = /^[^:]+.+:[^:]+$/;
-function validateFullName(fullName) {
-  if (!VALID_FULL_NAME_REGEXP.test(fullName)) {
-    throw new TypeError('Invalid Fullname, expected: `type:name` got: ' + fullName);
-  }
-  return true;
-}
-
-function initRules(rules, factoryName) {
-  return rules[factoryName] || (rules[factoryName] = []);
-}
-
-function addInjection(injections, property, injectionName) {
-  injections.push({
-    property: property,
-    fullName: injectionName
-  });
 }
 
 export default Container;

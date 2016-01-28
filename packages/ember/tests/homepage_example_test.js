@@ -1,32 +1,40 @@
-import "ember";
+import Ember from 'ember-metal/core';
+import Route from 'ember-routing/system/route';
+import run from 'ember-metal/run_loop';
+import Application from 'ember-application/system/application';
+import EmberObject from 'ember-runtime/system/object';
+import { computed } from 'ember-metal/computed';
+import { compile } from 'ember-template-compiler';
+import jQuery from 'ember-views/system/jquery';
+import { A as emberA } from 'ember-runtime/system/native_array';
 
 var App, $fixture;
 
 function setupExample() {
   // setup templates
-  Ember.TEMPLATES.application = Ember.Handlebars.compile("{{outlet}}");
-  Ember.TEMPLATES.index = Ember.Handlebars.compile("<h1>People</h1><ul>{{#each model}}<li>Hello, <b>{{fullName}}</b>!</li>{{/each}}</ul>");
+  Ember.TEMPLATES.application = compile('{{outlet}}');
+  Ember.TEMPLATES.index = compile('<h1>People</h1><ul>{{#each model as |person|}}<li>Hello, <b>{{person.fullName}}</b>!</li>{{/each}}</ul>');
 
 
-  App.Person = Ember.Object.extend({
+  App.Person = EmberObject.extend({
     firstName: null,
     lastName: null,
 
-    fullName: Ember.computed('firstName', 'lastName', function() {
-      return this.get('firstName') + " " + this.get('lastName');
+    fullName: computed('firstName', 'lastName', function() {
+      return this.get('firstName') + ' ' + this.get('lastName');
     })
   });
 
-  App.IndexRoute = Ember.Route.extend({
-    model: function() {
-      var people = Ember.A([
+  App.IndexRoute = Route.extend({
+    model() {
+      var people = emberA([
         App.Person.create({
-          firstName: "Tom",
-          lastName: "Dale"
+          firstName: 'Tom',
+          lastName: 'Dale'
         }),
         App.Person.create({
-          firstName: "Yehuda",
-          lastName: "Katz"
+          firstName: 'Yehuda',
+          lastName: 'Katz'
         })
       ]);
       return people;
@@ -34,11 +42,11 @@ function setupExample() {
   });
 }
 
-QUnit.module("Homepage Example", {
-  setup: function() {
-    Ember.run(function() {
-      App = Ember.Application.create({
-        name: "App",
+QUnit.module('Homepage Example', {
+  setup() {
+    run(function() {
+      App = Application.create({
+        name: 'App',
         rootElement: '#qunit-fixture'
       });
       App.deferReadiness();
@@ -47,15 +55,15 @@ QUnit.module("Homepage Example", {
         location: 'none'
       });
 
-      App.LoadingRoute = Ember.Route.extend();
+      App.LoadingRoute = Route.extend();
     });
 
-    $fixture = Ember.$('#qunit-fixture');
+    $fixture = jQuery('#qunit-fixture');
     setupExample();
   },
 
-  teardown: function() {
-    Ember.run(function() {
+  teardown() {
+    run(function() {
       App.destroy();
     });
 
@@ -66,8 +74,8 @@ QUnit.module("Homepage Example", {
 });
 
 
-test("The example renders correctly", function() {
-  Ember.run(App, 'advanceReadiness');
+QUnit.test('The example renders correctly', function() {
+  run(App, 'advanceReadiness');
 
   equal($fixture.find('h1:contains(People)').length, 1);
   equal($fixture.find('li').length, 2);

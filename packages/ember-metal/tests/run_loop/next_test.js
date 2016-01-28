@@ -3,7 +3,6 @@ import run from 'ember-metal/run_loop';
 QUnit.module('run.next');
 
 asyncTest('should invoke immediately on next timeout', function() {
-
   var invoked = false;
 
   run(function() {
@@ -17,7 +16,6 @@ asyncTest('should invoke immediately on next timeout', function() {
     QUnit.start();
     equal(invoked, true, 'should have invoked later item');
   }, 20);
-
 });
 
 asyncTest('callback should be called from within separate loop', function() {
@@ -30,7 +28,7 @@ asyncTest('callback should be called from within separate loop', function() {
   setTimeout(function() {
     QUnit.start();
     ok(secondRunLoop, 'callback was called from within run loop');
-    ok(firstRunLoop && secondRunLoop !== firstRunLoop, 'two seperate run loops were invoked');
+    ok(firstRunLoop && secondRunLoop !== firstRunLoop, 'two separate run loops were invoked');
   }, 20);
 });
 

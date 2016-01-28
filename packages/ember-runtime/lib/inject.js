@@ -1,17 +1,16 @@
-import Ember from "ember-metal/core"; // Ember.assert
-import { indexOf } from "ember-metal/enumerable_utils";
-import InjectedProperty from "ember-metal/injected_property";
-import keys from "ember-metal/keys";
+import { assert } from 'ember-metal/debug';
+import InjectedProperty from 'ember-metal/injected_property';
 
 /**
   Namespace for injection helper methods.
 
   @class inject
   @namespace Ember
-  */
-function inject() {
-  Ember.assert("Injected properties must be created through helpers, see `" +
-               keys(inject).join("`, `") + "`");
+  @static
+  @public
+*/
+export default function inject() {
+  assert(`Injected properties must be created through helpers, see '${Object.keys(inject).join('"', '"')}'`);
 }
 
 // Dictionary of injection validations by type, added to by `createInjectionHelper`
@@ -24,7 +23,8 @@ var typeValidators = {};
 
   @private
   @method createInjectionHelper
-  @namespace Ember
+  @since 1.10.0
+  @for Ember
   @param {String} type The container type the helper will inject
   @param {Function} validator A validation callback that is executed at mixin-time
 */
@@ -37,27 +37,23 @@ export function createInjectionHelper(type, validator) {
 }
 
 /**
-  Validation function intended to be invoked at when extending a factory with
-  injected properties. Runs per-type validation functions once for each injected
-  type encountered.
-
-  Note that this currently modifies the mixin themselves, which is technically
-  dubious but is practically of little consequence. This may change in the
-  future.
+  Validation function that runs per-type validation functions once for each
+  injected type encountered.
 
   @private
   @method validatePropertyInjections
-  @namespace Ember
-  @param {Object} factory The factory object being extended
-  @param {Object} props A hash of properties to be added to the factory
+  @since 1.10.0
+  @for Ember
+  @param {Object} factory The factory object
 */
-export function validatePropertyInjections(factory, props) {
+export function validatePropertyInjections(factory) {
+  var proto = factory.proto();
   var types = [];
   var key, desc, validator, i, l;
 
-  for (key in props) {
-    desc = props[key];
-    if (desc instanceof InjectedProperty && indexOf(types, desc.type) === -1) {
+  for (key in proto) {
+    desc = proto[key];
+    if (desc instanceof InjectedProperty && types.indexOf(desc.type) === -1) {
       types.push(desc.type);
     }
   }
@@ -74,5 +70,3 @@ export function validatePropertyInjections(factory, props) {
 
   return true;
 }
-
-export default inject;

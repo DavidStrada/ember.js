@@ -1,5 +1,4 @@
-import { indexOf } from 'ember-metal/enumerable_utils';
-import { typeOf } from 'ember-metal/utils';
+import { assert } from 'ember-metal/debug';
 import EmberObject from 'ember-runtime/system/object';
 import Copyable from 'ember-runtime/mixins/copyable';
 
@@ -12,16 +11,18 @@ function _copy(obj, deep, seen, copies) {
   }
 
   // avoid cyclical loops
-  if (deep && (loc = indexOf(seen, obj)) >= 0) {
+  if (deep && (loc = seen.indexOf(obj)) >= 0) {
     return copies[loc];
   }
 
-  Ember.assert('Cannot clone an Ember.Object that does not implement Ember.Copyable',
-    !(obj instanceof EmberObject) || (Copyable && Copyable.detect(obj)));
+  assert(
+    'Cannot clone an Ember.Object that does not implement Ember.Copyable',
+    !(obj instanceof EmberObject) || (Copyable && Copyable.detect(obj))
+  );
 
   // IMPORTANT: this specific test will detect a native array only. Any other
   // object will need to implement Copyable.
-  if (typeOf(obj) === 'array') {
+  if (Array.isArray(obj)) {
     ret = obj.slice();
 
     if (deep) {
@@ -63,18 +64,22 @@ function _copy(obj, deep, seen, copies) {
 }
 
 /**
-  Creates a clone of the passed object. This function can take just about
-  any type of object and create a clone of it, including primitive values
-  (which are not actually cloned because they are immutable).
+  Creates a shallow copy of the passed object. A deep copy of the object is
+  returned if the optional `deep` argument is `true`.
 
-  If the passed object implements the `clone()` method, then this function
-  will simply call that method and return the result.
+  If the passed object implements the `Ember.Copyable` interface, then this
+  function will delegate to the object's `copy()` method and return the
+  result. See `Ember.Copyable` for further details.
+
+  For primitive values (which are immutable in JavaScript), the passed object
+  is simply returned.
 
   @method copy
   @for Ember
   @param {Object} obj The object to clone
-  @param {Boolean} deep If true, a deep copy of the object is made
-  @return {Object} The cloned object
+  @param {Boolean} [deep=false] If true, a deep copy of the object is made.
+  @return {Object} The copied object
+  @public
 */
 export default function copy(obj, deep) {
   // fast paths

@@ -1,7 +1,6 @@
-import {SuiteModuleBuilder} from 'ember-runtime/tests/suites/suite';
-import EnumerableUtils from 'ember-metal/enumerable_utils';
-import {get} from 'ember-metal/property_get';
-import {guidFor} from "ember-metal/utils";
+import { SuiteModuleBuilder } from 'ember-runtime/tests/suites/suite';
+import { get } from 'ember-metal/property_get';
+import { guidFor } from 'ember-metal/utils';
 
 var suite = SuiteModuleBuilder.create();
 
@@ -11,7 +10,7 @@ function mapFunc(item) { return item ? item.toString() : null; }
 
 suite.test('map should iterate over list', function() {
   var obj = this.newObject();
-  var ary = EnumerableUtils.map(this.toArray(obj), mapFunc);
+  var ary = this.toArray(obj).map(mapFunc);
   var found = [];
 
   found = obj.map(mapFunc);
@@ -22,7 +21,7 @@ suite.test('map should iterate over list', function() {
 suite.test('map should iterate over list after mutation', function() {
   if (get(this, 'canTestMutation')) {
     expect(0);
-    return ;
+    return;
   }
 
   var obj = this.newObject();
@@ -54,7 +53,6 @@ suite.test('2nd target parameter', function() {
   obj.map(function() {
     equal(guidFor(this), guidFor(target), 'should pass target as this if context');
   }, target);
-
 });
 
 
@@ -70,7 +68,6 @@ suite.test('callback params', function() {
     equal(guidFor(enumerable), guidFor(obj), 'enumerable param');
     loc++;
   });
-
 });
 
 export default suite;

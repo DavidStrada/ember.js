@@ -3,9 +3,10 @@
 @submodule ember-runtime
 */
 
-import { Mixin } from "ember-metal/mixin";
-import { get } from "ember-metal/property_get";
-import { set } from "ember-metal/property_set";
+import { deprecate } from 'ember-metal/debug';
+import { Mixin } from 'ember-metal/mixin';
+import { get } from 'ember-metal/property_get';
+import { set } from 'ember-metal/property_set';
 
 /**
   The `Ember.Freezable` mixin implements some basic methods for marking an
@@ -62,8 +63,19 @@ import { set } from "ember-metal/property_set";
   @class Freezable
   @namespace Ember
   @since Ember 0.9
+  @deprecated Use `Object.freeze` instead.
+  @private
 */
 export var Freezable = Mixin.create({
+
+  init() {
+    deprecate(
+      '`Ember.Freezable` is deprecated, use `Object.freeze` instead.',
+      false,
+      { id: 'ember-runtime.freezable-init', until: '3.0.0' }
+    );
+    this._super(...arguments);
+  },
 
   /**
     Set to `true` when the object is frozen. Use this property to detect
@@ -71,6 +83,7 @@ export var Freezable = Mixin.create({
 
     @property isFrozen
     @type Boolean
+    @private
   */
   isFrozen: false,
 
@@ -80,13 +93,17 @@ export var Freezable = Mixin.create({
 
     @method freeze
     @return {Object} receiver
+    @private
   */
-  freeze: function() {
-    if (get(this, 'isFrozen')) return this;
+  freeze() {
+    if (get(this, 'isFrozen')) {
+      return this;
+    }
+
     set(this, 'isFrozen', true);
     return this;
   }
 
 });
 
-export var FROZEN_ERROR = "Frozen object cannot be modified.";
+export var FROZEN_ERROR = 'Frozen object cannot be modified.';

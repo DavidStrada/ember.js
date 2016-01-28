@@ -1,6 +1,5 @@
 import MutableEnumerableTests from 'ember-runtime/tests/suites/mutable_enumerable';
 import MutableEnumerable from 'ember-runtime/mixins/mutable_enumerable';
-import { indexOf } from 'ember-metal/enumerable_utils';
 import EmberObject from 'ember-runtime/system/object';
 import { computed } from 'ember-metal/computed';
 import { get } from 'ember-metal/property_get';
@@ -13,16 +12,21 @@ var TestMutableEnumerable = EmberObject.extend(MutableEnumerable, {
 
   _content: null,
 
-  addObject: function(obj) {
-    if (indexOf(this._content, obj)>=0) return this;
+  addObject(obj) {
+    if (this._content.indexOf(obj)>=0) {
+      return this;
+    }
+
     this.enumerableContentWillChange(null, [obj]);
     this._content.push(obj);
     this.enumerableContentDidChange(null, [obj]);
   },
 
-  removeObject: function(obj) {
-    var idx = indexOf(this._content, obj);
-    if (idx<0) return this;
+  removeObject(obj) {
+    var idx = this._content.indexOf(obj);
+    if (idx < 0) {
+      return this;
+    }
 
     this.enumerableContentWillChange([obj], null);
     this._content.splice(idx, 1);
@@ -30,11 +34,11 @@ var TestMutableEnumerable = EmberObject.extend(MutableEnumerable, {
     return this;
   },
 
-  init: function(ary) {
+  init(ary) {
     this._content = ary || [];
   },
 
-  nextObject: function(idx) {
+  nextObject(idx) {
     return idx>=get(this, 'length') ? undefined : this._content[idx];
   },
 
@@ -42,7 +46,7 @@ var TestMutableEnumerable = EmberObject.extend(MutableEnumerable, {
     return this._content.length;
   }),
 
-  slice: function() {
+  slice() {
     return this._content.slice();
   }
 });
@@ -52,17 +56,17 @@ MutableEnumerableTests.extend({
 
   name: 'Basic Mutable Array',
 
-  newObject: function(ary) {
+  newObject(ary) {
     ary = ary ? ary.slice() : this.newFixture(3);
     return new TestMutableEnumerable(ary);
   },
 
   // allows for testing of the basic enumerable after an internal mutation
-  mutate: function(obj) {
+  mutate(obj) {
     obj.addObject(this.getFixture(1)[0]);
   },
 
-  toArray: function(obj) {
+  toArray(obj) {
     return obj.slice();
   }
 

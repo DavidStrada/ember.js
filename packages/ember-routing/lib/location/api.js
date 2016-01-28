@@ -1,4 +1,6 @@
-import Ember from "ember-metal/core"; // deprecate, assert
+import { assert } from 'ember-metal/debug';
+import environment from 'ember-metal/environment';
+import { getHash } from 'ember-routing/location/util';
 
 /**
 @module ember
@@ -24,7 +26,7 @@ import Ember from "ember-metal/core"; // deprecate, assert
 
   ```javascript
   App.Router.map(function() {
-    this.resource('posts', function() {
+    this.route('posts', function() {
       this.route('new');
     });
   });
@@ -45,7 +47,7 @@ import Ember from "ember-metal/core"; // deprecate, assert
 
   ```javascript
   App.Router.map(function() {
-    this.resource('posts', function() {
+    this.route('posts', function() {
       this.route('new');
     });
   });
@@ -73,7 +75,7 @@ import Ember from "ember-metal/core"; // deprecate, assert
 
   ```javascript
   App.Router.map(function() {
-    this.resource('posts', function() {
+    this.route('posts', function() {
       this.route('new');
     });
   });
@@ -110,12 +112,17 @@ import Ember from "ember-metal/core"; // deprecate, assert
   * replaceURL(path): replace the current URL (optional).
   * onUpdateURL(callback): triggers the callback when the URL changes.
   * formatURL(url): formats `url` to be placed into `href` attribute.
+  * detect() (optional): instructs the location to do any feature detection
+      necessary. If the location needs to redirect to a different URL, it
+      can cancel routing by setting the `cancelRouterSetup` property on itself
+      to `false`.
 
   Calling setURL or replaceURL will not trigger onUpdateURL callbacks.
 
   @class Location
   @namespace Ember
   @static
+  @private
 */
 export default {
   /**
@@ -137,47 +144,20 @@ export default {
     @return {Object} an instance of an implementation of the `location` API
     @deprecated Use the container to lookup the location implementation that you
     need.
+    @private
   */
-  create: function(options) {
+  create(options) {
     var implementation = options && options.implementation;
-    Ember.assert("Ember.Location.create: you must specify a 'implementation' option", !!implementation);
+    assert('Ember.Location.create: you must specify a \'implementation\' option', !!implementation);
 
     var implementationClass = this.implementations[implementation];
-    Ember.assert("Ember.Location.create: " + implementation + " is not a valid implementation", !!implementationClass);
+    assert(`Ember.Location.create: ${implementation} is not a valid implementation`, !!implementationClass);
 
-    return implementationClass.create.apply(implementationClass, arguments);
-  },
-
-  /**
-   This is deprecated in favor of using the container to register the
-   location implementation as desired.
-
-   Example:
-
-   ```javascript
-   Application.initializer({
-    name: "history-test-location",
-
-    initialize: function(container, application) {
-      application.register('location:history-test', HistoryTestLocation);
-    }
-   });
-   ```
-
-   @method registerImplementation
-   @param {String} name
-   @param {Object} implementation of the `location` API
-   @deprecated Register your custom location implementation with the
-   container directly.
-  */
-  registerImplementation: function(name, implementation) {
-    Ember.deprecate('Using the Ember.Location.registerImplementation is no longer supported. Register your custom location implementation with the container instead.', false);
-
-    this.implementations[name] = implementation;
+    return implementationClass.create(...arguments);
   },
 
   implementations: {},
-  _location: window.location,
+  _location: environment.location,
 
   /**
     Returns the current `location.hash` by parsing location.href since browsers
@@ -189,16 +169,7 @@ export default {
     @method getHash
     @since 1.4.0
   */
-  _getHash: function () {
-    // AutoLocation has it at _location, HashLocation at .location.
-    // Being nice and not changing
-    var href = (this._location || this.location).href;
-    var hashIndex = href.indexOf('#');
-
-    if (hashIndex === -1) {
-      return '';
-    } else {
-      return href.substr(hashIndex);
-    }
+  _getHash() {
+    return getHash(this.location);
   }
 };

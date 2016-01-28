@@ -7,16 +7,12 @@
 // HELPERS
 //
 
-import Ember from 'ember-metal/core';
 import { get } from 'ember-metal/property_get';
 import { set } from 'ember-metal/property_set';
-import { apply } from 'ember-metal/utils';
 import {
   Mixin,
-  required,
   aliasMethod
 } from 'ember-metal/mixin';
-import { indexOf } from 'ember-metal/enumerable_utils';
 import { computed } from 'ember-metal/computed';
 import {
   propertyWillChange,
@@ -29,8 +25,13 @@ import {
   hasListeners
 } from 'ember-metal/events';
 import compare from 'ember-runtime/compare';
+import require from 'require';
 
-var a_slice = Array.prototype.slice;
+let _emberA;
+
+function emberA() {
+  return (_emberA || (_emberA = require('ember-runtime/system/native_array').A))();
+}
 
 var contexts = [];
 
@@ -90,13 +91,16 @@ function iter(key, value) {
   @class Enumerable
   @namespace Ember
   @since Ember 0.9
+  @private
 */
 export default Mixin.create({
 
   /**
+    __Required.__ You must implement this method to apply this mixin.
+
     Implement this method to make your class enumerable.
 
-    This method will be call repeatedly during enumeration. The index value
+    This method will be called repeatedly during enumeration. The index value
     will always begin with 0 and increment monotonically. You don't have to
     rely on the index value to determine what object to return, but you should
     always check the value and start from the beginning when you see the
@@ -113,7 +117,7 @@ export default Mixin.create({
     the index parameter is 0.
 
     Generally iterators will continue to call `nextObject` until the index
-    reaches the your current length-1. If you run out of data before this
+    reaches the current length-1. If you run out of data before this
     time for some reason, you should simply return undefined.
 
     The default implementation of this method simply looks up the index.
@@ -125,8 +129,9 @@ export default Mixin.create({
       `nextObject`.
     @param {Object} context a context object you can use to maintain state.
     @return {Object} the next object in the iteration or undefined
+    @private
   */
-  nextObject: required(Function),
+  nextObject: null,
 
   /**
     Helper method returns the first object from a collection. This is usually
@@ -148,6 +153,7 @@ export default Mixin.create({
 
     @property firstObject
     @return {Object} the object or undefined
+    @public
   */
   firstObject: computed('[]', function() {
     if (get(this, 'length') === 0) {
@@ -178,6 +184,7 @@ export default Mixin.create({
 
     @property lastObject
     @return {Object} the last object or undefined
+    @public
   */
   lastObject: computed('[]', function() {
     var len = get(this, 'length');
@@ -216,12 +223,13 @@ export default Mixin.create({
     @method contains
     @param {Object} obj The object to search for.
     @return {Boolean} `true` if object is found in enumerable.
+    @public
   */
-  contains: function(obj) {
+  contains(obj) {
     var found = this.find(function(item) {
       return item === obj;
     });
-    
+
     return found !== undefined;
   },
 
@@ -249,8 +257,9 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Object} receiver
+    @public
   */
-  forEach: function(callback, target) {
+  forEach(callback, target) {
     if (typeof callback !== 'function') {
       throw new TypeError();
     }
@@ -263,16 +272,16 @@ export default Mixin.create({
       target = null;
     }
 
-    for(var idx = 0; idx < len; idx++) {
-      var next = this.nextObject(idx, last, context) ;
+    for (var idx = 0; idx < len; idx++) {
+      var next = this.nextObject(idx, last, context);
       callback.call(target, next, idx, this);
-      last = next ;
+      last = next;
     }
 
-    last = null ;
+    last = null;
     context = pushCtx(context);
 
-    return this ;
+    return this;
   },
 
   /**
@@ -281,10 +290,9 @@ export default Mixin.create({
     @method getEach
     @param {String} key name of the property
     @return {Array} The mapped array.
+    @public
   */
-  getEach: function(key) {
-    return this.mapBy(key);
-  },
+  getEach: aliasMethod('mapBy'),
 
   /**
     Sets the value on the named property for each member. This is more
@@ -296,8 +304,9 @@ export default Mixin.create({
     @param {String} key The key to set
     @param {Object} value The object to set
     @return {Object} receiver
+    @public
   */
-  setEach: function(key, value) {
+  setEach(key, value) {
     return this.forEach(function(item) {
       set(item, key, value);
     });
@@ -328,15 +337,16 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Array} The mapped array.
+    @public
   */
-  map: function(callback, target) {
-    var ret = Ember.A();
+  map(callback, target) {
+    var ret = emberA();
 
     this.forEach(function(x, idx, i) {
-      ret[idx] = callback.call(target, x, idx,i);
+      ret[idx] = callback.call(target, x, idx, i);
     });
 
-    return ret ;
+    return ret;
   },
 
   /**
@@ -346,24 +356,13 @@ export default Mixin.create({
     @method mapBy
     @param {String} key name of the property
     @return {Array} The mapped array.
+    @public
   */
-  mapBy: function(key) {
+  mapBy(key) {
     return this.map(function(next) {
       return get(next, key);
     });
   },
-
-  /**
-    Similar to map, this specialized function returns the value of the named
-    property on all items in the enumeration.
-
-    @method mapProperty
-    @param {String} key name of the property
-    @return {Array} The mapped array.
-    @deprecated Use `mapBy` instead
-  */
-
-  mapProperty: aliasMethod('mapBy'),
 
   /**
     Returns an array with all of the items in the enumeration that the passed
@@ -392,9 +391,10 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Array} A filtered array.
+    @public
   */
-  filter: function(callback, target) {
-    var ret = Ember.A();
+  filter(callback, target) {
+    var ret = emberA();
 
     this.forEach(function(x, idx, i) {
       if (callback.call(target, x, idx, i)) {
@@ -402,12 +402,12 @@ export default Mixin.create({
       }
     });
 
-    return ret ;
+    return ret;
   },
 
   /**
     Returns an array with all of the items in the enumeration where the passed
-    function returns false for. This method is the inverse of filter().
+    function returns false. This method is the inverse of filter().
 
     The callback method you provide should have the following signature (all
     parameters are optional):
@@ -420,7 +420,7 @@ export default Mixin.create({
     - *index* is the current index in the iteration
     - *enumerable* is the enumerable object itself.
 
-    It should return the a falsey value to include the item in the results.
+    It should return a falsey value to include the item in the results.
 
     Note that in addition to a callback, you can also pass an optional target
     object that will be set as "this" on the context. This is a good way
@@ -430,10 +430,11 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Array} A rejected array.
-   */
-  reject: function(callback, target) {
+    @public
+  */
+  reject(callback, target) {
     return this.filter(function() {
-      return !(apply(target, callback, arguments));
+      return !(callback.apply(target, arguments));
     });
   },
 
@@ -446,23 +447,11 @@ export default Mixin.create({
     @param {String} key the property to test
     @param {*} [value] optional value to test against.
     @return {Array} filtered array
+    @public
   */
-  filterBy: function(key, value) {
-    return this.filter(apply(this, iter, arguments));
+  filterBy(key, value) {
+    return this.filter(iter.apply(this, arguments));
   },
-
-  /**
-    Returns an array with just the items with the matched property. You
-    can pass an optional second argument with the target value. Otherwise
-    this will match any property that evaluates to `true`.
-
-    @method filterProperty
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Array} filtered array
-    @deprecated Use `filterBy` instead
-  */
-  filterProperty: aliasMethod('filterBy'),
 
   /**
     Returns an array with the items that do not have truthy values for
@@ -473,8 +462,9 @@ export default Mixin.create({
     @param {String} key the property to test
     @param {String} [value] optional value to test against.
     @return {Array} rejected array
+    @public
   */
-  rejectBy: function(key, value) {
+  rejectBy(key, value) {
     var exactValue = function(item) {
       return get(item, key) === value;
     };
@@ -487,19 +477,6 @@ export default Mixin.create({
 
     return this.reject(use);
   },
-
-  /**
-    Returns an array with the items that do not have truthy values for
-    key.  You can pass an optional second argument with the target value.  Otherwise
-    this will match any property that evaluates to false.
-
-    @method rejectProperty
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Array} rejected array
-    @deprecated Use `rejectBy` instead
-  */
-  rejectProperty: aliasMethod('rejectBy'),
 
   /**
     Returns the first item in the array for which the callback returns true.
@@ -528,8 +505,9 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Object} Found item or `undefined`.
+    @public
   */
-  find: function(callback, target) {
+  find(callback, target) {
     var len = get(this, 'length');
 
     if (target === undefined) {
@@ -541,7 +519,7 @@ export default Mixin.create({
     var last = null;
     var next, ret;
 
-    for(var idx = 0; idx < len && !found; idx++) {
+    for (var idx = 0; idx < len && !found; idx++) {
       next = this.nextObject(idx, last, context);
 
       if (found = callback.call(target, next, idx, this)) {
@@ -568,25 +546,11 @@ export default Mixin.create({
     @param {String} key the property to test
     @param {String} [value] optional value to test against.
     @return {Object} found item or `undefined`
+    @public
   */
-  findBy: function(key, value) {
-    return this.find(apply(this, iter, arguments));
+  findBy(key, value) {
+    return this.find(iter.apply(this, arguments));
   },
-
-  /**
-    Returns the first item with a property matching the passed value. You
-    can pass an optional second argument with the target value. Otherwise
-    this will match any property that evaluates to `true`.
-
-    This method works much like the more generic `find()` method.
-
-    @method findProperty
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Object} found item or `undefined`
-    @deprecated Use `findBy` instead
-  */
-  findProperty: aliasMethod('findBy'),
 
   /**
     Returns `true` if the passed function returns true for every item in the
@@ -621,43 +585,26 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Boolean}
+    @public
   */
-  every: function(callback, target) {
-    return !this.find(function(x, idx, i) {
-      return !callback.call(target, x, idx, i);
-    });
+  every(callback, target) {
+    return !this.find((x, idx, i) => !callback.call(target, x, idx, i));
   },
 
   /**
-    @method everyBy
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @deprecated Use `isEvery` instead
-    @return {Boolean}
-  */
-  everyBy: aliasMethod('isEvery'),
-
-  /**
-    @method everyProperty
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @deprecated Use `isEvery` instead
-    @return {Boolean}
-  */
-  everyProperty: aliasMethod('isEvery'),
-
-  /**
-    Returns `true` if the passed property resolves to `true` for all items in
-    the enumerable. This method is often simpler/faster than using a callback.
+    Returns `true` if the passed property resolves to the value of the second
+    argument for all items in the enumerable. This method is often simpler/faster
+    than using a callback.
 
     @method isEvery
     @param {String} key the property to test
-    @param {String} [value] optional value to test against.
+    @param {String} [value] optional value to test against. Defaults to `true`
     @return {Boolean}
     @since 1.3.0
+    @public
   */
-  isEvery: function(key, value) {
-    return this.every(apply(this, iter, arguments));
+  isEvery(key, value) {
+    return this.every(iter.apply(this, arguments));
   },
 
   /**
@@ -694,8 +641,9 @@ export default Mixin.create({
     @param {Function} callback The callback to execute
     @param {Object} [target] The target object to use
     @return {Boolean} `true` if the passed function returns `true` for any item
+    @public
   */
-  any: function(callback, target) {
+  any(callback, target) {
     var len = get(this, 'length');
     var context = popCtx();
     var found = false;
@@ -718,74 +666,20 @@ export default Mixin.create({
   },
 
   /**
-    Returns `true` if the passed function returns true for any item in the
-    enumeration. This corresponds with the `some()` method in JavaScript 1.6.
-
-    The callback method you provide should have the following signature (all
-    parameters are optional):
-
-    ```javascript
-    function(item, index, enumerable);
-    ```
-
-    - `item` is the current item in the iteration.
-    - `index` is the current index in the iteration.
-    - `enumerable` is the enumerable object itself.
-
-    It should return the `true` to include the item in the results, `false`
-    otherwise.
-
-    Note that in addition to a callback, you can also pass an optional target
-    object that will be set as `this` on the context. This is a good way
-    to give your iterator function access to the current object.
-
-    Usage Example:
-
-    ```javascript
-    if (people.some(isManager)) {
-      Paychecks.addBiggerBonus();
-    }
-    ```
-
-    @method some
-    @param {Function} callback The callback to execute
-    @param {Object} [target] The target object to use
-    @return {Boolean} `true` if the passed function returns `true` for any item
-    @deprecated Use `any` instead
-  */
-  some: aliasMethod('any'),
-
-  /**
-    Returns `true` if the passed property resolves to `true` for any item in
-    the enumerable. This method is often simpler/faster than using a callback.
+    Returns `true` if the passed property resolves to the value of the second
+    argument for any item in the enumerable. This method is often simpler/faster
+    than using a callback.
 
     @method isAny
     @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Boolean} `true` if the passed function returns `true` for any item
+    @param {String} [value] optional value to test against. Defaults to `true`
+    @return {Boolean}
     @since 1.3.0
+    @public
   */
-  isAny: function(key, value) {
-    return this.any(apply(this, iter, arguments));
+  isAny(key, value) {
+    return this.any(iter.apply(this, arguments));
   },
-
-  /**
-    @method anyBy
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Boolean} `true` if the passed function returns `true` for any item
-    @deprecated Use `isAny` instead
-  */
-  anyBy: aliasMethod('isAny'),
-
-  /**
-    @method someProperty
-    @param {String} key the property to test
-    @param {String} [value] optional value to test against.
-    @return {Boolean} `true` if the passed function returns `true` for any item
-    @deprecated Use `isAny` instead
-  */
-  someProperty: aliasMethod('isAny'),
 
   /**
     This will combine the values of the enumerator into a single value. It
@@ -819,8 +713,9 @@ export default Mixin.create({
     @param {Object} initialValue Initial value for the reduce
     @param {String} reducerProperty internal use only.
     @return {Object} The reduced value.
+    @public
   */
-  reduce: function(callback, initialValue, reducerProperty) {
+  reduce(callback, initialValue, reducerProperty) {
     if (typeof callback !== 'function') {
       throw new TypeError();
     }
@@ -843,20 +738,16 @@ export default Mixin.create({
     @param {String} methodName the name of the method
     @param {Object...} args optional arguments to pass as well.
     @return {Array} return values from calling invoke.
+    @public
   */
-  invoke: function(methodName) {
-    var ret = Ember.A();
-    var args;
-
-    if (arguments.length > 1) {
-      args = a_slice.call(arguments, 1);
-    }
+  invoke(methodName, ...args) {
+    var ret = emberA();
 
     this.forEach(function(x, idx) {
       var method = x && x[methodName];
 
       if ('function' === typeof method) {
-        ret[idx] = args ? apply(x, method, args) : x[methodName]();
+        ret[idx] = args ? method.apply(x, args) : x[methodName]();
       }
     }, this);
 
@@ -869,9 +760,10 @@ export default Mixin.create({
 
     @method toArray
     @return {Array} the enumerable as an array.
+    @public
   */
-  toArray: function() {
-    var ret = Ember.A();
+  toArray() {
+    var ret = emberA();
 
     this.forEach(function(o, idx) {
       ret[idx] = o;
@@ -890,8 +782,9 @@ export default Mixin.create({
 
     @method compact
     @return {Array} the array without null and undefined elements.
+    @public
   */
-  compact: function() {
+  compact() {
     return this.filter(function(value) {
       return value != null;
     });
@@ -910,13 +803,14 @@ export default Mixin.create({
     @method without
     @param {Object} value
     @return {Ember.Enumerable}
+    @public
   */
-  without: function(value) {
+  without(value) {
     if (!this.contains(value)) {
       return this; // nothing to do
     }
 
-    var ret = Ember.A();
+    var ret = emberA();
 
     this.forEach(function(k) {
       if (k !== value) {
@@ -940,12 +834,13 @@ export default Mixin.create({
 
     @method uniq
     @return {Ember.Enumerable}
+    @public
   */
-  uniq: function() {
-    var ret = Ember.A();
+  uniq() {
+    var ret = emberA();
 
-    this.forEach(function(k) {
-      if (indexOf(ret, k) < 0) {
+    this.forEach((k) => {
+      if (ret.indexOf(k) < 0) {
         ret.push(k);
       }
     });
@@ -955,7 +850,7 @@ export default Mixin.create({
 
   /**
     This property will trigger anytime the enumerable's content changes.
-    You can observe this property to be notified of changes to the enumerables
+    You can observe this property to be notified of changes to the enumerable's
     content.
 
     For plain enumerables, this property is read only. `Array` overrides
@@ -964,9 +859,10 @@ export default Mixin.create({
     @property []
     @type Array
     @return this
+    @private
   */
-  '[]': computed(function(key, value) {
-    return this;
+  '[]': computed({
+    get(key) { return this; }
   }),
 
   // ..........................................................
@@ -979,15 +875,16 @@ export default Mixin.create({
 
     @method addEnumerableObserver
     @param {Object} target
-    @param {Hash} [opts]
+    @param {Object} [opts]
     @return this
+    @private
   */
-  addEnumerableObserver: function(target, opts) {
+  addEnumerableObserver(target, opts) {
     var willChange = (opts && opts.willChange) || 'enumerableWillChange';
     var didChange  = (opts && opts.didChange) || 'enumerableDidChange';
     var hasObservers = get(this, 'hasEnumerableObservers');
 
-    if (!hasObservers) { 
+    if (!hasObservers) {
       propertyWillChange(this, 'hasEnumerableObservers');
     }
 
@@ -1006,10 +903,11 @@ export default Mixin.create({
 
     @method removeEnumerableObserver
     @param {Object} target
-    @param {Hash} [opts]
+    @param {Object} [opts]
     @return this
+    @private
   */
-  removeEnumerableObserver: function(target, opts) {
+  removeEnumerableObserver(target, opts) {
     var willChange = (opts && opts.willChange) || 'enumerableWillChange';
     var didChange  = (opts && opts.didChange) || 'enumerableDidChange';
     var hasObservers = get(this, 'hasEnumerableObservers');
@@ -1034,6 +932,7 @@ export default Mixin.create({
 
     @property hasEnumerableObservers
     @type Boolean
+    @private
   */
   hasEnumerableObservers: computed(function() {
     return hasListeners(this, '@enumerable:change') || hasListeners(this, '@enumerable:before');
@@ -1051,8 +950,9 @@ export default Mixin.create({
     @param {Ember.Enumerable|Number} adding An enumerable of the objects to be
       added or the number of items to be added.
     @chainable
+    @private
   */
-  enumerableContentWillChange: function(removing, adding) {
+  enumerableContentWillChange(removing, adding) {
     var removeCnt, addCnt, hasDelta;
 
     if ('number' === typeof removing) {
@@ -1066,7 +966,7 @@ export default Mixin.create({
     if ('number' === typeof adding) {
       addCnt = adding;
     } else if (adding) {
-      addCnt = get(adding,'length');
+      addCnt = get(adding, 'length');
     } else {
       addCnt = adding = -1;
     }
@@ -1105,8 +1005,9 @@ export default Mixin.create({
     @param {Ember.Enumerable|Number} adding  An enumerable of the objects to
       be added or the number of items to be added.
     @chainable
+    @private
   */
-  enumerableContentDidChange: function(removing, adding) {
+  enumerableContentDidChange(removing, adding) {
     var removeCnt, addCnt, hasDelta;
 
     if ('number' === typeof removing) {
@@ -1143,7 +1044,7 @@ export default Mixin.create({
 
     propertyDidChange(this, '[]');
 
-    return this ;
+    return this;
   },
 
   /**
@@ -1156,12 +1057,13 @@ export default Mixin.create({
     @param {String} property name(s) to sort on
     @return {Array} The sorted array.
     @since 1.2.0
-    */
-  sortBy: function() {
+    @public
+  */
+  sortBy() {
     var sortKeys = arguments;
 
-    return this.toArray().sort(function(a, b){
-      for(var i = 0; i < sortKeys.length; i++) {
+    return this.toArray().sort(function(a, b) {
+      for (var i = 0; i < sortKeys.length; i++) {
         var key = sortKeys[i];
         var propA = get(a, key);
         var propB = get(b, key);

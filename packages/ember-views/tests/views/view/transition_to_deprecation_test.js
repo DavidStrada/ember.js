@@ -4,15 +4,15 @@ import run from 'ember-metal/run_loop';
 var view;
 
 QUnit.module('views/view/transition_to_deprecation', {
-  setup: function() {
+  setup() {
     view = EmberView.create();
   },
-  teardown: function() {
+  teardown() {
     run(view, 'destroy');
   }
 });
 
-test('deprecates when calling transitionTo', function() {
+QUnit.test('deprecates when calling transitionTo', function() {
   expect(1);
 
   view = EmberView.create();
@@ -22,7 +22,7 @@ test('deprecates when calling transitionTo', function() {
   }, '');
 });
 
-test("doesn't deprecate when calling _transitionTo", function() {
+QUnit.test('doesn\'t deprecate when calling _transitionTo', function() {
   expect(1);
 
   view = EmberView.create();

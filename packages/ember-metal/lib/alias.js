@@ -1,25 +1,30 @@
-import { get } from "ember-metal/property_get";
-import { set } from "ember-metal/property_set";
-import EmberError from "ember-metal/error";
-import { Descriptor, defineProperty } from "ember-metal/properties";
-import { ComputedProperty } from "ember-metal/computed";
-import { create } from "ember-metal/platform";
-import { meta, inspect } from "ember-metal/utils";
+import { assert } from 'ember-metal/debug';
+import { get } from 'ember-metal/property_get';
+import { set } from 'ember-metal/property_set';
+import EmberError from 'ember-metal/error';
+import {
+  Descriptor,
+  defineProperty
+} from 'ember-metal/properties';
+import { ComputedProperty } from 'ember-metal/computed';
+import { inspect } from 'ember-metal/utils';
+import { meta } from 'ember-metal/meta';
 import {
   addDependentKeys,
   removeDependentKeys
-} from "ember-metal/dependent_keys";
+} from 'ember-metal/dependent_keys';
 
-export function alias(altKey) {
+export default function alias(altKey) {
   return new AliasedProperty(altKey);
 }
 
 export function AliasedProperty(altKey) {
+  this.isDescriptor = true;
   this.altKey = altKey;
-  this._dependentKeys = [ altKey ];
+  this._dependentKeys = [altKey];
 }
 
-AliasedProperty.prototype = create(Descriptor.prototype);
+AliasedProperty.prototype = Object.create(Descriptor.prototype);
 
 AliasedProperty.prototype.get = function AliasedProperty_get(obj, keyName) {
   return get(obj, this.altKey);
@@ -38,15 +43,16 @@ AliasedProperty.prototype.didUnwatch = function(obj, keyName) {
 };
 
 AliasedProperty.prototype.setup = function(obj, keyName) {
+  assert(`Setting alias '${keyName}' on self`, this.altKey !== keyName);
   var m = meta(obj);
-  if (m.watching[keyName]) {
+  if (m.peekWatching(keyName)) {
     addDependentKeys(this, obj, keyName, m);
   }
 };
 
 AliasedProperty.prototype.teardown = function(obj, keyName) {
   var m = meta(obj);
-  if (m.watching[keyName]) {
+  if (m.peekWatching(keyName)) {
     removeDependentKeys(this, obj, keyName, m);
   }
 };
@@ -57,7 +63,7 @@ AliasedProperty.prototype.readOnly = function() {
 };
 
 function AliasedProperty_readOnlySet(obj, keyName, value) {
-  throw new EmberError('Cannot set read-only property "' + keyName + '" on object: ' + inspect(obj));
+  throw new EmberError(`Cannot set read-only property '${keyName}' on object: ${inspect(obj)}`);
 }
 
 AliasedProperty.prototype.oneWay = function() {

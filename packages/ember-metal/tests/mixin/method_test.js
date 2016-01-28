@@ -1,4 +1,3 @@
-import { create } from 'ember-metal/platform';
 import {
   mixin,
   Mixin
@@ -6,13 +5,12 @@ import {
 
 QUnit.module('Mixin Methods');
 
-test('defining simple methods', function() {
-
+QUnit.test('defining simple methods', function() {
   var MixinA, obj, props;
 
   props = {
-    publicMethod: function() { return 'publicMethod'; },
-    _privateMethod: function() { return 'privateMethod'; }
+    publicMethod() { return 'publicMethod'; },
+    _privateMethod() { return 'privateMethod'; }
   };
 
   MixinA = Mixin.create(props);
@@ -24,23 +22,23 @@ test('defining simple methods', function() {
   equal(props._privateMethod(), 'privateMethod', 'privateMethod is func');
 });
 
-test('overriding public methods', function() {
+QUnit.test('overriding public methods', function() {
   var MixinA, MixinB, MixinD, MixinF, obj;
 
   MixinA = Mixin.create({
-    publicMethod: function() { return 'A'; }
+    publicMethod() { return 'A'; }
   });
 
   MixinB = Mixin.create(MixinA, {
-    publicMethod: function() { return this._super()+'B'; }
+    publicMethod() { return this._super(...arguments) + 'B'; }
   });
 
   MixinD = Mixin.create(MixinA, {
-    publicMethod: function() { return this._super()+'D'; }
+    publicMethod() { return this._super(...arguments) + 'D'; }
   });
 
   MixinF = Mixin.create({
-    publicMethod: function() { return this._super()+'F'; }
+    publicMethod() { return this._super(...arguments) + 'F'; }
   });
 
   obj = {};
@@ -56,27 +54,29 @@ test('overriding public methods', function() {
   MixinF.apply(obj);
   equal(obj.publicMethod(), 'AF', 'should define super for A and F');
 
-  obj = { publicMethod: function() { return 'obj'; } };
+  obj = { publicMethod() { return 'obj'; } };
   MixinF.apply(obj);
   equal(obj.publicMethod(), 'objF', 'should define super for F');
 });
 
 
-test('overriding inherited objects', function() {
-
+QUnit.test('overriding inherited objects', function() {
   var cnt = 0;
   var MixinA = Mixin.create({
-    foo: function() { cnt++; }
+    foo() { cnt++; }
   });
 
   var MixinB = Mixin.create({
-    foo: function() { this._super(); cnt++; }
+    foo() {
+      this._super(...arguments);
+      cnt++;
+    }
   });
 
   var objA = {};
   MixinA.apply(objA);
 
-  var objB = create(objA);
+  var objB = Object.create(objA);
   MixinB.apply(objB);
 
   cnt = 0;
@@ -88,22 +88,22 @@ test('overriding inherited objects', function() {
   equal(cnt, 1, 'should not screw w/ parent obj');
 });
 
-test('Including the same mixin more than once will only run once', function() {
+QUnit.test('Including the same mixin more than once will only run once', function() {
   var cnt = 0;
   var MixinA = Mixin.create({
-    foo: function() { cnt++; }
+    foo() { cnt++; }
   });
 
   var MixinB = Mixin.create(MixinA, {
-    foo: function() { this._super(); }
+    foo() { this._super(...arguments); }
   });
 
   var MixinC = Mixin.create(MixinA, {
-    foo: function() { this._super(); }
+    foo() { this._super(...arguments); }
   });
 
   var MixinD = Mixin.create(MixinB, MixinC, MixinA, {
-    foo: function() { this._super(); }
+    foo() { this._super(...arguments); }
   });
 
   var obj = {};
@@ -116,10 +116,10 @@ test('Including the same mixin more than once will only run once', function() {
   equal(cnt, 1, 'should invoke MixinA.foo one time');
 });
 
-test('_super from a single mixin with no superclass does not error', function() {
+QUnit.test('_super from a single mixin with no superclass does not error', function() {
   var MixinA = Mixin.create({
-    foo: function() {
-      this._super();
+    foo() {
+      this._super(...arguments);
     }
   });
 
@@ -130,18 +130,20 @@ test('_super from a single mixin with no superclass does not error', function() 
   ok(true);
 });
 
-test('_super from a first-of-two mixins with no superclass function does not error', function() {
+QUnit.test('_super from a first-of-two mixins with no superclass function does not error', function() {
   // _super was previously calling itself in the second assertion.
   // Use remaining count of calls to ensure it doesn't loop indefinitely.
   var remaining = 3;
   var MixinA = Mixin.create({
-    foo: function() {
-      if (remaining-- > 0) this._super();
+    foo() {
+      if (remaining-- > 0) {
+        this._super(...arguments);
+      }
     }
   });
 
   var MixinB = Mixin.create({
-    foo: function() { this._super(); }
+    foo() { this._super(...arguments); }
   });
 
   var obj = {};
@@ -159,9 +161,9 @@ test('_super from a first-of-two mixins with no superclass function does not err
 QUnit.module('Method Conflicts');
 
 
-test('overriding toString', function() {
+QUnit.test('overriding toString', function() {
   var MixinA = Mixin.create({
-    toString: function() { return 'FOO'; }
+    toString() { return 'FOO'; }
   });
 
   var obj = {};
@@ -169,7 +171,7 @@ test('overriding toString', function() {
   equal(obj.toString(), 'FOO', 'should override toString w/o error');
 
   obj = {};
-  mixin(obj, { toString: function() { return 'FOO'; } });
+  mixin(obj, { toString() { return 'FOO'; } });
   equal(obj.toString(), 'FOO', 'should override toString w/o error');
 });
 
@@ -179,19 +181,24 @@ test('overriding toString', function() {
 
 QUnit.module('system/mixin/method_test BUGS');
 
-test('applying several mixins at once with sup already defined causes infinite loop', function() {
-
+QUnit.test('applying several mixins at once with sup already defined causes infinite loop', function() {
   var cnt = 0;
   var MixinA = Mixin.create({
-    foo: function() { cnt++; }
+    foo() { cnt++; }
   });
 
   var MixinB = Mixin.create({
-    foo: function() { this._super(); cnt++; }
+    foo() {
+      this._super(...arguments);
+      cnt++;
+    }
   });
 
   var MixinC = Mixin.create({
-    foo: function() { this._super(); cnt++; }
+    foo() {
+      this._super(...arguments);
+      cnt++;
+    }
   });
 
   var obj = {};

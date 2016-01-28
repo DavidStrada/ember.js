@@ -1,17 +1,18 @@
-import {SuiteModuleBuilder} from 'ember-runtime/tests/suites/suite';
+import get from 'ember-metal/property_get';
+import { SuiteModuleBuilder } from 'ember-runtime/tests/suites/suite';
 
 var suite = SuiteModuleBuilder.create();
 
 suite.module('addObject');
 
-suite.test("should return receiver", function() {
+suite.test('should return receiver', function() {
   var before, obj;
   before = this.newFixture(3);
   obj    = this.newObject(before);
   equal(obj.addObject(before[1]), obj, 'should return receiver');
 });
 
-suite.test("[A,B].addObject(C) => [A,B,C] + notify", function() {
+suite.test('[A,B].addObject(C) => [A,B,C] + notify', function() {
   var obj, before, after, observer, item;
 
   before = this.newFixture(2);
@@ -24,11 +25,11 @@ suite.test("[A,B].addObject(C) => [A,B,C] + notify", function() {
   obj.addObject(item);
 
   deepEqual(this.toArray(obj), after, 'post item results');
-  equal(Ember.get(obj, 'length'), after.length, 'length');
+  equal(get(obj, 'length'), after.length, 'length');
 
   if (observer.isEnabled) {
     equal(observer.timesCalled('[]'), 1, 'should have notified [] once');
-    equal(observer.timesCalled('@each'), 1, 'should have notified @each once');
+    equal(observer.timesCalled('@each'), 0, 'should not have notified @each once');
     equal(observer.timesCalled('length'), 1, 'should have notified length once');
     equal(observer.timesCalled('lastObject'), 1, 'should have notified lastObject once');
 
@@ -36,7 +37,7 @@ suite.test("[A,B].addObject(C) => [A,B,C] + notify", function() {
   }
 });
 
-suite.test("[A,B,C].addObject(A) => [A,B,C] + NO notify", function() {
+suite.test('[A,B,C].addObject(A) => [A,B,C] + NO notify', function() {
   var obj, before, after, observer, item;
 
   before = this.newFixture(3);
@@ -49,7 +50,7 @@ suite.test("[A,B,C].addObject(A) => [A,B,C] + NO notify", function() {
   obj.addObject(item); // note: item in set
 
   deepEqual(this.toArray(obj), after, 'post item results');
-  equal(Ember.get(obj, 'length'), after.length, 'length');
+  equal(get(obj, 'length'), after.length, 'length');
 
   if (observer.isEnabled) {
     equal(observer.validate('[]'), false, 'should NOT have notified []');

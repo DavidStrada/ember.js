@@ -1,17 +1,17 @@
 import {SuiteModuleBuilder} from 'ember-runtime/tests/suites/suite';
-import {get} from "ember-metal/property_get";
+import {get} from 'ember-metal/property_get';
 
 var suite = SuiteModuleBuilder.create();
 
 suite.module('pushObject');
 
-suite.test("returns pushed object", function() {
+suite.test('returns pushed object', function() {
   var exp = this.newFixture(1)[0];
   var obj = this.newObject([]);
   equal(obj.pushObject(exp), exp, 'should return pushed object');
 });
 
-suite.test("[].pushObject(X) => [X] + notify", function() {
+suite.test('[].pushObject(X) => [X] + notify', function() {
   var obj, before, after, observer;
 
   before = [];
@@ -26,13 +26,13 @@ suite.test("[].pushObject(X) => [X] + notify", function() {
   equal(get(obj, 'length'), after.length, 'length');
 
   equal(observer.timesCalled('[]'), 1, 'should have notified [] once');
-  equal(observer.timesCalled('@each'), 1, 'should have notified @each once');
+  equal(observer.timesCalled('@each'), 0, 'should not have notified @each once');
   equal(observer.timesCalled('length'), 1, 'should have notified length once');
   equal(observer.timesCalled('firstObject'), 1, 'should have notified firstObject once');
   equal(observer.timesCalled('lastObject'), 1, 'should have notified lastObject once');
 });
 
-suite.test("[A,B,C].pushObject(X) => [A,B,C,X] + notify", function() {
+suite.test('[A,B,C].pushObject(X) => [A,B,C,X] + notify', function() {
   var obj, before, after, item, observer;
 
   before = this.newFixture(3);
@@ -48,7 +48,7 @@ suite.test("[A,B,C].pushObject(X) => [A,B,C,X] + notify", function() {
   equal(get(obj, 'length'), after.length, 'length');
 
   equal(observer.timesCalled('[]'), 1, 'should have notified [] once');
-  equal(observer.timesCalled('@each'), 1, 'should have notified @each once');
+  equal(observer.timesCalled('@each'), 0, 'should not have notified @each once');
   equal(observer.timesCalled('length'), 1, 'should have notified length once');
   equal(observer.timesCalled('lastObject'), 1, 'should have notified lastObject once');
 

@@ -1,13 +1,17 @@
 import {
-  guidFor,
-  tryFinally
-} from "ember-metal/utils";
+  guidFor
+} from 'ember-metal/utils';
+import {
+  peekMeta
+} from 'ember-metal/meta';
 import {
   sendEvent,
-  listenersUnion,
-  listenersDiff
-} from "ember-metal/events";
-import ObserverSet from "ember-metal/observer_set";
+  accumulateListeners
+} from 'ember-metal/events';
+import ObserverSet from 'ember-metal/observer_set';
+import symbol from 'ember-metal/symbol';
+
+export let PROPERTY_DID_CHANGE = symbol('PROPERTY_DID_CHANGE');
 
 var beforeObserverSet = new ObserverSet();
 var observerSet = new ObserverSet();
@@ -31,16 +35,27 @@ var deferred = 0;
   @param {Object} obj The object with the property that will change
   @param {String} keyName The property key (or path) that will change.
   @return {void}
+  @private
 */
 function propertyWillChange(obj, keyName) {
-  var m = obj['__ember_meta__'];
-  var watching = (m && m.watching[keyName] > 0) || keyName === 'length';
+  var m = peekMeta(obj);
+  var watching = (m && m.peekWatching(keyName) > 0) || keyName === 'length';
   var proto = m && m.proto;
-  var desc = m && m.descs[keyName];
+  var possibleDesc = obj[keyName];
+  var desc = (possibleDesc !== null && typeof possibleDesc === 'object' && possibleDesc.isDescriptor) ? possibleDesc : undefined;
 
-  if (!watching) { return; }
-  if (proto === obj) { return; }
-  if (desc && desc.willChange) { desc.willChange(obj, keyName); }
+  if (!watching) {
+    return;
+  }
+
+  if (proto === obj) {
+    return;
+  }
+
+  if (desc && desc.willChange) {
+    desc.willChange(obj, keyName);
+  }
+
   dependentKeysWillChange(obj, keyName, m);
   chainsWillChange(obj, keyName, m);
   notifyBeforeObservers(obj, keyName);
@@ -60,20 +75,33 @@ function propertyWillChange(obj, keyName) {
   @param {Object} obj The object with the property that will change
   @param {String} keyName The property key (or path) that will change.
   @return {void}
+  @private
 */
 function propertyDidChange(obj, keyName) {
-  var m = obj['__ember_meta__'];
-  var watching = (m && m.watching[keyName] > 0) || keyName === 'length';
+  var m = peekMeta(obj);
+  var watching = (m && m.peekWatching(keyName) > 0) || keyName === 'length';
   var proto = m && m.proto;
-  var desc = m && m.descs[keyName];
+  var possibleDesc = obj[keyName];
+  var desc = (possibleDesc !== null && typeof possibleDesc === 'object' && possibleDesc.isDescriptor) ? possibleDesc : undefined;
 
-  if (proto === obj) { return; }
+  if (proto === obj) {
+    return;
+  }
 
   // shouldn't this mean that we're watching this key?
-  if (desc && desc.didChange) { desc.didChange(obj, keyName); }
-  if (!watching && keyName !== 'length') { return; }
+  if (desc && desc.didChange) {
+    desc.didChange(obj, keyName);
+  }
 
-  if (m && m.deps && m.deps[keyName]) {
+  if (obj[PROPERTY_DID_CHANGE]) {
+    obj[PROPERTY_DID_CHANGE](keyName);
+  }
+
+  if (!watching && keyName !== 'length') {
+    return;
+  }
+
+  if (m && m.hasDeps(keyName)) {
     dependentKeysDidChange(obj, keyName, m);
   }
 
@@ -86,13 +114,19 @@ var WILL_SEEN, DID_SEEN;
 function dependentKeysWillChange(obj, depKey, meta) {
   if (obj.isDestroying) { return; }
 
-  var deps;
-  if (meta && meta.deps && (deps = meta.deps[depKey])) {
+  if (meta && meta.hasDeps(depKey)) {
     var seen = WILL_SEEN;
     var top = !seen;
-    if (top) { seen = WILL_SEEN = {}; }
-    iterDeps(propertyWillChange, obj, deps, depKey, seen, meta);
-    if (top) { WILL_SEEN = null; }
+
+    if (top) {
+      seen = WILL_SEEN = {};
+    }
+
+    iterDeps(propertyWillChange, obj, depKey, seen, meta);
+
+    if (top) {
+      WILL_SEEN = null;
+    }
   }
 }
 
@@ -100,86 +134,70 @@ function dependentKeysWillChange(obj, depKey, meta) {
 function dependentKeysDidChange(obj, depKey, meta) {
   if (obj.isDestroying) { return; }
 
-  var deps;
-  if (meta && meta.deps && (deps = meta.deps[depKey])) {
+  if (meta && meta.hasDeps(depKey)) {
     var seen = DID_SEEN;
     var top = !seen;
-    if (top) { seen = DID_SEEN = {}; }
-    iterDeps(propertyDidChange, obj, deps, depKey, seen, meta);
-    if (top) { DID_SEEN = null; }
-  }
-}
 
-function keysOf(obj) {
-  var keys = [];
-  for (var key in obj) keys.push(key);
-  return keys;
-}
+    if (top) {
+      seen = DID_SEEN = {};
+    }
 
-function iterDeps(method, obj, deps, depKey, seen, meta) {
-  var keys, key, i, desc;
-  var guid = guidFor(obj);
-  var current = seen[guid];
-  if (!current) current = seen[guid] = {};
-  if (current[depKey]) return;
-  current[depKey] = true;
+    iterDeps(propertyDidChange, obj, depKey, seen, meta);
 
-  if (deps) {
-    keys = keysOf(deps);
-    var descs = meta.descs;
-    for (i=0; i<keys.length; i++) {
-      key = keys[i];
-      desc = descs[key];
-      if (desc && desc._suspended === obj) continue;
-      method(obj, key);
+    if (top) {
+      DID_SEEN = null;
     }
   }
 }
 
-function chainsWillChange(obj, keyName, m) {
-  if (!(m.hasOwnProperty('chainWatchers') &&
-        m.chainWatchers[keyName])) {
+function iterDeps(method, obj, depKey, seen, meta) {
+  var possibleDesc, desc;
+  var guid = guidFor(obj);
+  var current = seen[guid];
+
+  if (!current) {
+    current = seen[guid] = {};
+  }
+
+  if (current[depKey]) {
     return;
   }
 
-  var nodes = m.chainWatchers[keyName];
-  var events = [];
-  var i, l;
+  current[depKey] = true;
 
-  for(i = 0, l = nodes.length; i < l; i++) {
-    nodes[i].willChange(events);
-  }
+  meta.forEachInDeps(depKey, (key, value) => {
+    if (!value) { return; }
 
-  for (i = 0, l = events.length; i < l; i += 2) {
-    propertyWillChange(events[i], events[i+1]);
+    possibleDesc = obj[key];
+    desc = (possibleDesc !== null && typeof possibleDesc === 'object' && possibleDesc.isDescriptor) ? possibleDesc : undefined;
+
+    if (desc && desc._suspended === obj) {
+      return;
+    }
+
+    method(obj, key);
+  });
+}
+
+function chainsWillChange(obj, keyName, m) {
+  let c = m.readableChainWatchers();
+  if (c) {
+    c.notify(keyName, false, propertyWillChange);
   }
 }
 
-function chainsDidChange(obj, keyName, m, suppressEvents) {
-  if (!(m && m.hasOwnProperty('chainWatchers') &&
-        m.chainWatchers[keyName])) {
-    return;
-  }
-
-  var nodes = m.chainWatchers[keyName];
-  var events = suppressEvents ? null : [];
-  var i, l;
-
-  for(i = 0, l = nodes.length; i < l; i++) {
-    nodes[i].didChange(events);
-  }
-
-  if (suppressEvents) {
-    return;
-  }
-
-  for (i = 0, l = events.length; i < l; i += 2) {
-    propertyDidChange(events[i], events[i+1]);
+function chainsDidChange(obj, keyName, m) {
+  let c = m.readableChainWatchers();
+  if (c) {
+    c.notify(keyName, true, propertyDidChange);
   }
 }
 
 function overrideChains(obj, keyName, m) {
-  chainsDidChange(obj, keyName, m, true);
+  let c = m.readableChainWatchers();
+  if (c) {
+    c.revalidate(keyName);
+  }
 }
 
 /**
@@ -217,21 +235,26 @@ function endPropertyChanges() {
   @method changeProperties
   @param {Function} callback
   @param [binding]
+  @private
 */
-function changeProperties(cb, binding) {
+function changeProperties(callback, binding) {
   beginPropertyChanges();
-  tryFinally(cb, endPropertyChanges, binding);
+  try {
+    callback.call(binding);
+  } finally {
+    endPropertyChanges.call(binding);
+  }
 }
 
 function notifyBeforeObservers(obj, keyName) {
   if (obj.isDestroying) { return; }
 
   var eventName = keyName + ':before';
-  var listeners, diff;
+  var listeners, added;
   if (deferred) {
     listeners = beforeObserverSet.add(obj, keyName, eventName);
-    diff = listenersDiff(obj, eventName, listeners);
-    sendEvent(obj, eventName, [obj, keyName], diff);
+    added = accumulateListeners(obj, eventName, listeners);
+    sendEvent(obj, eventName, [obj, keyName], added);
   } else {
     sendEvent(obj, eventName, [obj, keyName]);
   }
@@ -244,7 +267,7 @@ function notifyObservers(obj, keyName) {
   var listeners;
   if (deferred) {
     listeners = observerSet.add(obj, keyName, eventName);
-    listenersUnion(obj, eventName, listeners);
+    accumulateListeners(obj, eventName, listeners);
   } else {
     sendEvent(obj, eventName, [obj, keyName]);
   }

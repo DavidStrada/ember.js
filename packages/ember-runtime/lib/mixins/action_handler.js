@@ -2,28 +2,24 @@
 @module ember
 @submodule ember-runtime
 */
-import merge from "ember-metal/merge";
+
+import { assert, deprecate } from 'ember-metal/debug';
 import { Mixin } from 'ember-metal/mixin';
-import { get } from "ember-metal/property_get";
-import { typeOf } from "ember-metal/utils";
+import { get } from 'ember-metal/property_get';
 
 /**
-  The `Ember.ActionHandler` mixin implements support for moving an `actions`
-  property to an `_actions` property at extend time, and adding `_actions`
-  to the object's mergedProperties list.
-
   `Ember.ActionHandler` is available on some familiar classes including
-  `Ember.Route`, `Ember.View`, `Ember.Component`, and controllers such as
-  `Ember.Controller` and `Ember.ObjectController`.
+  `Ember.Route`, `Ember.View`, `Ember.Component`, and `Ember.Controller`.
   (Internally the mixin is used by `Ember.CoreView`, `Ember.ControllerMixin`,
   and `Ember.Route` and available to the above classes through
   inheritance.)
 
   @class ActionHandler
   @namespace Ember
+  @private
 */
 var ActionHandler = Mixin.create({
-  mergedProperties: ['_actions'],
+  mergedProperties: ['actions'],
 
   /**
     The collection of functions, keyed by name, available on this
@@ -79,7 +75,7 @@ var ActionHandler = Mixin.create({
     });
     ```
 
-    It is also possible to call `this._super()` from within an
+    It is also possible to call `this._super(...arguments)` from within an
     action handler if it overrides a handler defined on a parent
     class or mixin:
 
@@ -98,7 +94,7 @@ var ActionHandler = Mixin.create({
       actions: {
         debugRouteInformation: function() {
           // also call the debugRouteInformation of mixed in App.DebugRoute
-          this._super();
+          this._super(...arguments);
 
           // show additional annoyance
           window.alert(...);
@@ -115,7 +111,7 @@ var ActionHandler = Mixin.create({
 
     ```js
     App.Router.map(function() {
-      this.resource("album", function() {
+      this.route("album", function() {
         this.route("song");
       });
     });
@@ -141,44 +137,10 @@ var ActionHandler = Mixin.create({
     ```
 
     @property actions
-    @type Hash
+    @type Object
     @default null
+    @public
   */
-
-  /**
-    Moves `actions` to `_actions` at extend time. Note that this currently
-    modifies the mixin themselves, which is technically dubious but
-    is practically of little consequence. This may change in the future.
-
-    @private
-    @method willMergeMixin
-  */
-  willMergeMixin: function(props) {
-    if (Ember.FEATURES.isEnabled('ember-metal-injected-properties')) {
-      // Calling super is only OK here since we KNOW that there is another
-      // Mixin loaded first (injection dependency verification)
-      this._super.apply(this, arguments);
-    }
-
-    var hashName;
-
-    if (!props._actions) {
-      Ember.assert("'actions' should not be a function", typeof(props.actions) !== 'function');
-
-      if (typeOf(props.actions) === 'object') {
-        hashName = 'actions';
-      } else if (typeOf(props.events) === 'object') {
-        Ember.deprecate('Action handlers contained in an `events` object are deprecated in favor of putting them in an `actions` object', false);
-        hashName = 'events';
-      }
-
-      if (hashName) {
-        props._actions = merge(props._actions || {}, props[hashName]);
-      }
-
-      delete props[hashName];
-    }
-  },
 
   /**
     Triggers a named action on the `ActionHandler`. Any parameters
@@ -208,24 +170,58 @@ var ActionHandler = Mixin.create({
     @method send
     @param {String} actionName The action to trigger
     @param {*} context a context to send with the action
+    @public
   */
-  send: function(actionName) {
-    var args = [].slice.call(arguments, 1);
+  send(actionName, ...args) {
     var target;
 
-    if (this._actions && this._actions[actionName]) {
-      if (this._actions[actionName].apply(this, args) === true) {
-        // handler returned true, so this action will bubble
-      } else {
-        return;
-      }
+    if (this.actions && this.actions[actionName]) {
+      var shouldBubble = this.actions[actionName].apply(this, args) === true;
+      if (!shouldBubble) { return; }
     }
 
     if (target = get(this, 'target')) {
-      Ember.assert("The `target` for " + this + " (" + target + ") does not have a `send` method", typeof target.send === 'function');
-      target.send.apply(target, arguments);
+      assert(
+        'The `target` for ' + this + ' (' + target +
+        ') does not have a `send` method',
+        typeof target.send === 'function'
+      );
+      target.send(...arguments);
+    }
+  },
+
+  willMergeMixin(props) {
+    assert('Specifying `_actions` and `actions` in the same mixin is not supported.', !props.actions || !props._actions);
+
+    if (props._actions) {
+      deprecate(
+        'Specifying actions in `_actions` is deprecated, please use `actions` instead.',
+        false,
+        { id: 'ember-runtime.action-handler-_actions', until: '3.0.0' }
+      );
+
+      props.actions = props._actions;
+      delete props._actions;
     }
   }
 });
 
 export default ActionHandler;
+
+export function deprecateUnderscoreActions(factory) {
+  Object.defineProperty(factory.prototype, '_actions', {
+    configurable: true,
+    enumerable: false,
+    set(value) {
+      assert(`You cannot set \`_actions\` on ${this}, please use \`actions\` instead.`);
+    },
+    get() {
+      deprecate(
+        `Usage of \`_actions\` is deprecated, use \`actions\` instead.`,
+        false,
+        { id: 'ember-runtime.action-handler-_actions', until: '3.0.0' }
+      );
+      return get(this, 'actions');
+    }
+  });
+}

@@ -1,90 +1,128 @@
-import Ember from "ember-metal/core";
+import isEnabled from 'ember-metal/features';
 import {
-  meta,
-  typeOf
-} from "ember-metal/utils";
-import { defineProperty as o_defineProperty, hasPropertyAccessors } from "ember-metal/platform";
-import { MANDATORY_SETTER_FUNCTION, DEFAULT_GETTER_FUNCTION } from "ember-metal/properties";
+  meta as metaFor
+} from 'ember-metal/meta';
+import {
+  MANDATORY_SETTER_FUNCTION,
+  DEFAULT_GETTER_FUNCTION,
+  INHERITING_GETTER_FUNCTION
+} from 'ember-metal/properties';
+import { lookupDescriptor } from 'ember-metal/utils';
 
-var metaFor = meta; // utils.js
-
+let handleMandatorySetter;
 
 export function watchKey(obj, keyName, meta) {
   // can't watch length on Array - it is special...
-  if (keyName === 'length' && typeOf(obj) === 'array') { return; }
+  if (keyName === 'length' && Array.isArray(obj)) { return; }
 
-  var m = meta || metaFor(obj), watching = m.watching;
+  var m = meta || metaFor(obj);
 
   // activate watching first time
-  if (!watching[keyName]) {
-    watching[keyName] = 1;
+  if (!m.peekWatching(keyName)) {
+    m.writeWatching(keyName, 1);
 
-    var desc = m.descs[keyName];
+    var possibleDesc = obj[keyName];
+    var desc = (possibleDesc !== null &&
+                typeof possibleDesc === 'object' &&
+                possibleDesc.isDescriptor) ? possibleDesc : undefined;
     if (desc && desc.willWatch) { desc.willWatch(obj, keyName); }
 
     if ('function' === typeof obj.willWatchProperty) {
       obj.willWatchProperty(keyName);
     }
 
-    if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-      if (hasPropertyAccessors) {
-        handleMandatorySetter(m, obj, keyName);
-      }
+    if (isEnabled('mandatory-setter')) {
+      // NOTE: this is dropped for prod + minified builds
+      handleMandatorySetter(m, obj, keyName);
     }
   } else {
-    watching[keyName] = (watching[keyName] || 0) + 1;
+    m.writeWatching(keyName, (m.peekWatching(keyName) || 0) + 1);
   }
 }
 
 
-if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-  var handleMandatorySetter = function handleMandatorySetter(m, keyName, obj) {
+if (isEnabled('mandatory-setter')) {
+  // Future traveler, although this code looks scary. It merely exists in
+  // development to aid in development asertions. Production builds of
+  // ember strip this entire block out
+  handleMandatorySetter = function handleMandatorySetter(m, obj, keyName) {
+    let descriptor = lookupDescriptor(obj, keyName);
+    var configurable = descriptor ? descriptor.configurable : true;
+    var isWritable = descriptor ? descriptor.writable : true;
+    var hasValue = descriptor ? 'value' in descriptor : true;
+    var possibleDesc = descriptor && descriptor.value;
+    var isDescriptor = possibleDesc !== null &&
+                       typeof possibleDesc === 'object' &&
+                       possibleDesc.isDescriptor;
+
+    if (isDescriptor) { return; }
+
     // this x in Y deopts, so keeping it in this function is better;
-    if (keyName in obj) {
-      m.values[keyName] = obj[keyName];
-      o_defineProperty(obj, keyName, {
+    if (configurable && isWritable && hasValue && keyName in obj) {
+      let desc = {
         configurable: true,
-        enumerable: obj.propertyIsEnumerable(keyName),
-        set: MANDATORY_SETTER_FUNCTION,
-        get: DEFAULT_GETTER_FUNCTION(keyName)
-      });
+        enumerable: Object.prototype.propertyIsEnumerable.call(obj, keyName),
+        set: MANDATORY_SETTER_FUNCTION(keyName),
+        get: undefined
+      };
+
+      if (Object.prototype.hasOwnProperty.call(obj, keyName)) {
+        m.writeValues(keyName, obj[keyName]);
+        desc.get = DEFAULT_GETTER_FUNCTION(keyName);
+      } else {
+        desc.get = INHERITING_GETTER_FUNCTION(keyName);
+      }
+
+      Object.defineProperty(obj, keyName, desc);
     }
   };
 }
 
 export function unwatchKey(obj, keyName, meta) {
-  var m = meta || metaFor(obj), watching = m.watching;
+  var m = meta || metaFor(obj);
+  let count = m.peekWatching(keyName);
+  if (count === 1) {
+    m.writeWatching(keyName, 0);
 
-  if (watching[keyName] === 1) {
-    watching[keyName] = 0;
+    var possibleDesc = obj[keyName];
+    var desc = (possibleDesc !== null &&
+                typeof possibleDesc === 'object' &&
+                possibleDesc.isDescriptor) ? possibleDesc : undefined;
 
-    var desc = m.descs[keyName];
     if (desc && desc.didUnwatch) { desc.didUnwatch(obj, keyName); }
 
     if ('function' === typeof obj.didUnwatchProperty) {
       obj.didUnwatchProperty(keyName);
     }
 
-    if (Ember.FEATURES.isEnabled('mandatory-setter')) {
-      if (hasPropertyAccessors && keyName in obj) {
-        o_defineProperty(obj, keyName, {
-          configurable: true,
-          enumerable: obj.propertyIsEnumerable(keyName),
-          set: function(val) {
-            // redefine to set as enumerable
-            o_defineProperty(obj, keyName, {
+    if (isEnabled('mandatory-setter')) {
+      // It is true, the following code looks quite WAT. But have no fear, It
+      // exists purely to improve development ergonomics and is removed from
+      // ember.min.js and ember.prod.js builds.
+      //
+      // Some further context: Once a property is watched by ember, bypassing `set`
+      // for mutation, will bypass observation. This code exists to assert when
+      // that occurs, and attempt to provide more helpful feedback. The alternative
+      // is tricky to debug partially observable properties.
+      if (!desc && keyName in obj) {
+        let maybeMandatoryDescriptor = lookupDescriptor(obj, keyName);
+
+        if (maybeMandatoryDescriptor.set && maybeMandatoryDescriptor.set.isMandatorySetter) {
+          if (maybeMandatoryDescriptor.get && maybeMandatoryDescriptor.get.isInheritingGetter) {
+            delete obj[keyName];
+          } else {
+            Object.defineProperty(obj, keyName, {
               configurable: true,
+              enumerable: Object.prototype.propertyIsEnumerable.call(obj, keyName),
               writable: true,
-              enumerable: true,
-              value: val
+              value: m.peekValues(keyName)
             });
-            delete m.values[keyName];
-          },
-          get: DEFAULT_GETTER_FUNCTION(keyName)
-        });
+            m.deleteFromValues(keyName);
+          }
+        }
       }
     }
-  } else if (watching[keyName] > 1) {
-    watching[keyName]--;
+  } else if (count > 1) {
+    m.writeWatching(keyName, count - 1);
   }
 }

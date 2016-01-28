@@ -1,9 +1,8 @@
 import Ember from 'ember-metal/core';
+import { assert } from 'ember-metal/debug';
 import {
-  apply,
   GUID_KEY
 } from 'ember-metal/utils';
-import { indexOf } from "ember-metal/array";
 import {
   beginPropertyChanges,
   endPropertyChanges
@@ -31,7 +30,6 @@ var backburner = new Backburner(['sync', 'actions', 'destroy'], {
   onErrorTarget: Ember,
   onErrorMethod: 'onerror'
 });
-var slice = [].slice;
 
 // ..........................................................
 // run - this is ideally the only public API the dev sees
@@ -49,7 +47,7 @@ var slice = [].slice;
 
   ```javascript
   run(function() {
-    // code to be execute within a RunLoop
+    // code to be executed within a RunLoop
   });
   ```
 
@@ -63,10 +61,10 @@ var slice = [].slice;
     then it will be looked up on the passed target.
   @param {Object} [args*] Any additional arguments you wish to pass to the method.
   @return {Object} return value from invoking the passed function.
+  @public
 */
-export default run;
-function run() {
-  return apply(backburner, backburner.run, arguments);
+export default function run() {
+  return backburner.run(...arguments);
 }
 
 /**
@@ -105,46 +103,50 @@ function run() {
   @param {Object} [args*] Any additional arguments you wish to pass to the method.
   @return {Object} Return value from invoking the passed function. Please note,
   when called within an existing loop, no return value is possible.
+  @public
 */
-run.join = function(target, method /* args */) {
-  if (!run.currentRunLoop) {
-    return apply(Ember, run, arguments);
-  }
-
-  var args = slice.call(arguments);
-  args.unshift('actions');
-  apply(run, run.schedule, args);
+run.join = function() {
+  return backburner.join(...arguments);
 };
 
 /**
-  Provides a useful utility for when integrating with non-Ember libraries
-  that provide asynchronous callbacks.
+  Allows you to specify which context to call the specified function in while
+  adding the execution of that function to the Ember run loop. This ability
+  makes this method a great way to asynchronously integrate third-party libraries
+  into your Ember application.
 
-  Ember utilizes a run-loop to batch and coalesce changes. This works by
-  marking the start and end of Ember-related Javascript execution.
+  `run.bind` takes two main arguments, the desired context and the function to
+  invoke in that context. Any additional arguments will be supplied as arguments
+  to the function that is passed in.
 
-  When using events such as a View's click handler, Ember wraps the event
-  handler in a run-loop, but when integrating with non-Ember libraries this
-  can be tedious.
-
-  For example, the following is rather verbose but is the correct way to combine
-  third-party events and Ember code.
+  Let's use the creation of a TinyMCE component as an example. Currently,
+  TinyMCE provides a setup configuration option we can use to do some processing
+  after the TinyMCE instance is initialized but before it is actually rendered.
+  We can use that setup option to do some additional setup for our component.
+  The component itself could look something like the following:
 
   ```javascript
-  var that = this;
-  jQuery(window).on('resize', function(){
-    run(function(){
-      that.handleResize();
-    });
+  App.RichTextEditorComponent = Ember.Component.extend({
+    initializeTinyMCE: Ember.on('didInsertElement', function() {
+      tinymce.init({
+        selector: '#' + this.$().prop('id'),
+        setup: Ember.run.bind(this, this.setupEditor)
+      });
+    }),
+
+    setupEditor: function(editor) {
+      this.set('editor', editor);
+
+      editor.on('change', function() {
+        console.log('content changed!');
+      });
+    }
   });
   ```
 
-  To reduce the boilerplate, the following can be used to construct a
-  run-loop-wrapped callback handler.
-
-  ```javascript
-  jQuery(window).on('resize', run.bind(this, this.handleResize));
-  ```
+  In this example, we use Ember.run.bind to bind the setupEditor method to the
+  context of the App.RichTextEditorComponent and to have the invocation of that
+  method be safely handled and executed by the Ember run loop.
 
   @method bind
   @namespace Ember
@@ -153,14 +155,13 @@ run.join = function(target, method /* args */) {
     May be a function or a string. If you pass a string
     then it will be looked up on the passed target.
   @param {Object} [args*] Any additional arguments you wish to pass to the method.
-  @return {Object} return value from invoking the passed function. Please note,
-  when called within an existing loop, no return value is possible.
+  @return {Function} returns a new function that will always have a particular context
   @since 1.4.0
+  @public
 */
-run.bind = function(target, method /* args*/) {
-  var args = slice.call(arguments);
-  return function() {
-    return apply(run, run.join, args.concat(slice.call(arguments)));
+run.bind = function(...curried) {
+  return function(...args) {
+    return run.join(...curried.concat(args));
   };
 };
 
@@ -175,12 +176,13 @@ run.queues = backburner.queueNames;
 
   ```javascript
   run.begin();
-  // code to be execute within a RunLoop
+  // code to be executed within a RunLoop
   run.end();
   ```
 
   @method begin
   @return {void}
+  @public
 */
 run.begin = function() {
   backburner.begin();
@@ -193,12 +195,13 @@ run.begin = function() {
 
   ```javascript
   run.begin();
-  // code to be execute within a RunLoop
+  // code to be executed within a RunLoop
   run.end();
   ```
 
   @method end
   @return {void}
+  @public
 */
 run.end = function() {
   backburner.end();
@@ -213,6 +216,7 @@ run.end = function() {
   @property queues
   @type Array
   @default ['sync', 'actions', 'destroy']
+  @private
 */
 
 /**
@@ -228,12 +232,12 @@ run.end = function() {
   ```javascript
   run.schedule('sync', this, function() {
     // this will be executed in the first RunLoop queue, when bindings are synced
-    console.log("scheduled on sync queue");
+    console.log('scheduled on sync queue');
   });
 
   run.schedule('actions', this, function() {
     // this will be executed in the 'actions' queue, after bindings have synced.
-    console.log("scheduled on actions queue");
+    console.log('scheduled on actions queue');
   });
 
   // Note the functions will be run in order based on the run queues order.
@@ -251,10 +255,11 @@ run.end = function() {
     invoked allowing you to change the target function.
   @param {Object} [arguments*] Optional arguments to be passed to the queued method.
   @return {void}
+  @public
 */
-run.schedule = function(queue, target, method) {
+run.schedule = function(/* queue, target, method */) {
   checkAutoRun();
-  apply(backburner, backburner.schedule, arguments);
+  backburner.schedule(...arguments);
 };
 
 // Used by global test teardown
@@ -263,7 +268,7 @@ run.hasScheduledTimers = function() {
 };
 
 // Used by global test teardown
-run.cancelTimers = function () {
+run.cancelTimers = function() {
   backburner.cancelTimers();
 };
 
@@ -282,6 +287,7 @@ run.cancelTimers = function () {
 
   @method sync
   @return {void}
+  @private
 */
 run.sync = function() {
   if (backburner.currentInstance) {
@@ -312,11 +318,11 @@ run.sync = function() {
     target at the time the method is invoked.
   @param {Object} [args*] Optional arguments to pass to the timeout.
   @param {Number} wait Number of milliseconds to wait.
-  @return {String} a string you can use to cancel the timer in
-    `run.cancel` later.
+  @return {*} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
-run.later = function(target, method) {
-  return apply(backburner, backburner.later, arguments);
+run.later = function(/*target, method*/) {
+  return backburner.later(...arguments);
 };
 
 /**
@@ -330,12 +336,12 @@ run.later = function(target, method) {
     target at the time the method is invoked.
   @param {Object} [args*] Optional arguments to pass to the timeout.
   @return {Object} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
-run.once = function(target, method) {
+run.once = function(...args) {
   checkAutoRun();
-  var args = slice.call(arguments);
   args.unshift('actions');
-  return apply(backburner, backburner.scheduleOnce, args);
+  return backburner.scheduleOnce(...args);
 };
 
 /**
@@ -348,8 +354,11 @@ run.once = function(target, method) {
   calls.
 
   ```javascript
+  function sayHi() {
+    console.log('hi');
+  }
+
   run(function() {
-    var sayHi = function() { console.log('hi'); }
     run.scheduleOnce('afterRender', myContext, sayHi);
     run.scheduleOnce('afterRender', myContext, sayHi);
     // sayHi will only be executed once, in the afterRender queue of the RunLoop
@@ -362,10 +371,14 @@ run.once = function(target, method) {
 
   ```javascript
   function scheduleIt() {
-    run.scheduleOnce('actions', myContext, function() { console.log("Closure"); });
+    run.scheduleOnce('actions', myContext, function() {
+      console.log('Closure');
+    });
   }
+
   scheduleIt();
   scheduleIt();
+
   // "Closure" will print twice, even though we're using `run.scheduleOnce`,
   // because the function we pass to it is anonymous and won't match the
   // previously scheduled operation.
@@ -381,10 +394,11 @@ run.once = function(target, method) {
     target at the time the method is invoked.
   @param {Object} [args*] Optional arguments to pass to the timeout.
   @return {Object} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
-run.scheduleOnce = function(queue, target, method) {
+run.scheduleOnce = function(/*queue, target, method*/) {
   checkAutoRun();
-  return apply(backburner, backburner.scheduleOnce, arguments);
+  return backburner.scheduleOnce(...arguments);
 };
 
 /**
@@ -444,47 +458,59 @@ run.scheduleOnce = function(queue, target, method) {
     target at the time the method is invoked.
   @param {Object} [args*] Optional arguments to pass to the timeout.
   @return {Object} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
-run.next = function() {
-  var args = slice.call(arguments);
+run.next = function(...args) {
   args.push(1);
-  return apply(backburner, backburner.later, args);
+  return backburner.later(...args);
 };
 
 /**
   Cancels a scheduled item. Must be a value returned by `run.later()`,
-  `run.once()`, `run.next()`, `run.debounce()`, or
+  `run.once()`, `run.scheduleOnce()`, `run.next()`, `run.debounce()`, or
   `run.throttle()`.
 
   ```javascript
   var runNext = run.next(myContext, function() {
     // will not be executed
   });
+
   run.cancel(runNext);
 
   var runLater = run.later(myContext, function() {
     // will not be executed
   }, 500);
+
   run.cancel(runLater);
+
+  var runScheduleOnce = run.scheduleOnce('afterRender', myContext, function() {
+    // will not be executed
+  });
+
+  run.cancel(runScheduleOnce);
 
   var runOnce = run.once(myContext, function() {
     // will not be executed
   });
+
   run.cancel(runOnce);
 
   var throttle = run.throttle(myContext, function() {
     // will not be executed
   }, 1, false);
+
   run.cancel(throttle);
 
   var debounce = run.debounce(myContext, function() {
     // will not be executed
   }, 1);
+
   run.cancel(debounce);
 
   var debounceImmediate = run.debounce(myContext, function() {
     // will be executed since we passed in true (immediate)
   }, 100, true);
+
   // the 100ms delay until this method can be called again will be cancelled
   run.cancel(debounceImmediate);
   ```
@@ -492,6 +518,7 @@ run.next = function() {
   @method cancel
   @param {Object} timer Timer object to cancel
   @return {Boolean} true if cancelled or false/undefined if it wasn't found
+  @public
 */
 run.cancel = function(timer) {
   return backburner.cancel(timer);
@@ -509,18 +536,20 @@ run.cancel = function(timer) {
   happen once scrolling has ceased.
 
   ```javascript
-    var myFunc = function() { console.log(this.name + ' ran.'); };
-    var myContext = {name: 'debounce'};
+  function whoRan() {
+    console.log(this.name + ' ran.');
+  }
 
-    run.debounce(myContext, myFunc, 150);
+  var myContext = { name: 'debounce' };
 
-    // less than 150ms passes
+  run.debounce(myContext, whoRan, 150);
 
-    run.debounce(myContext, myFunc, 150);
+  // less than 150ms passes
+  run.debounce(myContext, whoRan, 150);
 
-    // 150ms passes
-    // myFunc is invoked with context myContext
-    // console logs 'debounce ran.' one time.
+  // 150ms passes
+  // whoRan is invoked with context myContext
+  // console logs 'debounce ran.' one time.
   ```
 
   Immediate allows you to run the function immediately, but debounce
@@ -530,24 +559,25 @@ run.cancel = function(timer) {
   the method can be called again.
 
   ```javascript
-    var myFunc = function() { console.log(this.name + ' ran.'); };
-    var myContext = {name: 'debounce'};
+  function whoRan() {
+    console.log(this.name + ' ran.');
+  }
 
-    run.debounce(myContext, myFunc, 150, true);
+  var myContext = { name: 'debounce' };
 
-    // console logs 'debounce ran.' one time immediately.
-    // 100ms passes
+  run.debounce(myContext, whoRan, 150, true);
 
-    run.debounce(myContext, myFunc, 150, true);
+  // console logs 'debounce ran.' one time immediately.
+  // 100ms passes
+  run.debounce(myContext, whoRan, 150, true);
 
-    // 150ms passes and nothing else is logged to the console and
-    // the debouncee is no longer being watched
+  // 150ms passes and nothing else is logged to the console and
+  // the debouncee is no longer being watched
+  run.debounce(myContext, whoRan, 150, true);
 
-    run.debounce(myContext, myFunc, 150, true);
-
-    // console logs 'debounce ran.' one time immediately.
-    // 150ms passes and nothing else is logged to the console and
-    // the debouncee is no longer being watched
+  // console logs 'debounce ran.' one time immediately.
+  // 150ms passes and nothing else is logged to the console and
+  // the debouncee is no longer being watched
 
   ```
 
@@ -561,9 +591,10 @@ run.cancel = function(timer) {
   @param {Boolean} immediate Trigger the function on the leading instead
     of the trailing edge of the wait interval. Defaults to false.
   @return {Array} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
 run.debounce = function() {
-  return apply(backburner, backburner.debounce, arguments);
+  return backburner.debounce(...arguments);
 };
 
 /**
@@ -571,23 +602,26 @@ run.debounce = function() {
   the specified spacing period. The target method is called immediately.
 
   ```javascript
-    var myFunc = function() { console.log(this.name + ' ran.'); };
-    var myContext = {name: 'throttle'};
+  function whoRan() {
+    console.log(this.name + ' ran.');
+  }
 
-    run.throttle(myContext, myFunc, 150);
-    // myFunc is invoked with context myContext
-    // console logs 'throttle ran.'
+  var myContext = { name: 'throttle' };
 
-    // 50ms passes
-    run.throttle(myContext, myFunc, 150);
+  run.throttle(myContext, whoRan, 150);
+  // whoRan is invoked with context myContext
+  // console logs 'throttle ran.'
 
-    // 50ms passes
-    run.throttle(myContext, myFunc, 150);
+  // 50ms passes
+  run.throttle(myContext, whoRan, 150);
 
-    // 150ms passes
-    run.throttle(myContext, myFunc, 150);
-    // myFunc is invoked with context myContext
-    // console logs 'throttle ran.'
+  // 50ms passes
+  run.throttle(myContext, whoRan, 150);
+
+  // 150ms passes
+  run.throttle(myContext, whoRan, 150);
+  // whoRan is invoked with context myContext
+  // console logs 'throttle ran.'
   ```
 
   @method throttle
@@ -600,15 +634,20 @@ run.debounce = function() {
   @param {Boolean} immediate Trigger the function on the leading instead
     of the trailing edge of the wait interval. Defaults to true.
   @return {Array} Timer information for use in cancelling, see `run.cancel`.
+  @public
 */
 run.throttle = function() {
-  return apply(backburner, backburner.throttle, arguments);
+  return backburner.throttle(...arguments);
 };
 
 // Make sure it's not an autorun during testing
 function checkAutoRun() {
   if (!run.currentRunLoop) {
-    Ember.assert("You have turned on testing mode, which disabled the run-loop's autorun. You will need to wrap any code with asynchronous side-effects in an run", !Ember.testing);
+    assert(
+      `You have turned on testing mode, which disabled the run-loop's autorun. ` +
+      `You will need to wrap any code with asynchronous side-effects in a run`,
+      !Ember.testing
+    );
   }
 }
 
@@ -623,7 +662,7 @@ function checkAutoRun() {
   @private
 */
 run._addQueue = function(name, after) {
-  if (indexOf.call(run.queues, name) === -1) {
-    run.queues.splice(indexOf.call(run.queues, after)+1, 0, name);
+  if (run.queues.indexOf(name) === -1) {
+    run.queues.splice(run.queues.indexOf(after) + 1, 0, name);
   }
 };

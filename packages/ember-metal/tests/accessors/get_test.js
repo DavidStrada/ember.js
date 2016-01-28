@@ -1,4 +1,4 @@
-import testBoth from 'ember-metal/tests/props_helper';
+import { testBoth } from 'ember-metal/tests/props_helper';
 import {
   get,
   getWithDefault
@@ -7,12 +7,11 @@ import {
   Mixin,
   observer
 } from 'ember-metal/mixin';
-import { addObserver } from "ember-metal/observer";
-import { create } from 'ember-metal/platform';
+import { addObserver } from 'ember-metal/observer';
 
 QUnit.module('Ember.get');
 
-test('should get arbitrary properties on an object', function() {
+QUnit.test('should get arbitrary properties on an object', function() {
   var obj = {
     string: 'string',
     number: 23,
@@ -21,20 +20,32 @@ test('should get arbitrary properties on an object', function() {
     nullValue: null
   };
 
-  for(var key in obj) {
-    if (!obj.hasOwnProperty(key)) continue;
+  for (var key in obj) {
+    if (!obj.hasOwnProperty(key)) {
+      continue;
+    }
     equal(get(obj, key), obj[key], key);
   }
-
 });
 
-testBoth("should call unknownProperty on watched values if the value is undefined", function(get, set) {
+QUnit.test('should not access a property more than once', function() {
+  var count = 0;
+  var obj = {
+    get id() { return ++count; }
+  };
+
+  get(obj, 'id');
+
+  equal(count, 1);
+});
+
+testBoth('should call unknownProperty on watched values if the value is undefined', function(get, set) {
   var obj = {
     count: 0,
-    unknownProperty: function(key) {
-      equal(key, 'foo', "should pass key");
+    unknownProperty(key) {
+      equal(key, 'foo', 'should pass key');
       this.count++;
-      return "FOO";
+      return 'FOO';
     }
   };
 
@@ -46,40 +57,72 @@ testBoth("should call unknownProperty on watched values if the value is undefine
   equal(get(obj, 'foo'), 'FOO', 'should return value from unknown');
 });
 
-test('warn on attempts to get a property of undefined', function() {
+QUnit.test('warn on attemps to call get with no arguments', function() {
+  expectAssertion(function() {
+    get('aProperty');
+  }, /Get must be called with two arguments;/i);
+});
+
+QUnit.test('warn on attemps to call get with only one argument', function() {
+  expectAssertion(function() {
+    get('aProperty');
+  }, /Get must be called with two arguments;/i);
+});
+
+QUnit.test('warn on attemps to call get with more then two arguments', function() {
+  expectAssertion(function() {
+    get({}, 'aProperty', true);
+  }, /Get must be called with two arguments;/i);
+});
+
+QUnit.test('warn on attempts to get a property of undefined', function() {
   expectAssertion(function() {
     get(undefined, 'aProperty');
   }, /Cannot call get with 'aProperty' on an undefined object/i);
 });
 
-test('warn on attempts to get a property path of undefined', function() {
+QUnit.test('warn on attempts to get a property path of undefined', function() {
   expectAssertion(function() {
     get(undefined, 'aProperty.on.aPath');
   }, /Cannot call get with 'aProperty.on.aPath' on an undefined object/);
 });
 
-test('warn on attempts to get a falsy property', function() {
+QUnit.test('warn on attempts to get a property of null', function() {
+  expectAssertion(function() {
+    get(null, 'aProperty');
+  }, /Cannot call get with 'aProperty' on an undefined object/);
+});
+
+QUnit.test('warn on attempts to get a property path of null', function() {
+  expectAssertion(function() {
+    get(null, 'aProperty.on.aPath');
+  }, /Cannot call get with 'aProperty.on.aPath' on an undefined object/);
+});
+
+QUnit.test('warn on attempts to use get with an unsupported property path', function() {
   var obj = {};
   expectAssertion(function() {
     get(obj, null);
-  }, /Cannot call get with null key/);
+  }, /The key provided to get must be a string, you passed null/);
   expectAssertion(function() {
     get(obj, NaN);
-  }, /Cannot call get with NaN key/);
+  }, /The key provided to get must be a string, you passed NaN/);
   expectAssertion(function() {
     get(obj, undefined);
-  }, /Cannot call get with undefined key/);
+  }, /The key provided to get must be a string, you passed undefined/);
   expectAssertion(function() {
     get(obj, false);
-  }, /Cannot call get with false key/);
+  }, /The key provided to get must be a string, you passed false/);
+  expectAssertion(function() {
+    get(obj, 42);
+  }, /The key provided to get must be a string, you passed 42/);
 });
 
 // ..........................................................
 // BUGS
 //
 
-test('(regression) watched properties on unmodified inherited objects should still return their original value', function() {
-
+QUnit.test('(regression) watched properties on unmodified inherited objects should still return their original value', function() {
   var MyMixin = Mixin.create({
     someProperty: 'foo',
     propertyDidChange: observer('someProperty', function() {
@@ -88,14 +131,14 @@ test('(regression) watched properties on unmodified inherited objects should sti
   });
 
   var baseObject = MyMixin.apply({});
-  var theRealObject = create(baseObject);
+  var theRealObject = Object.create(baseObject);
 
   equal(get(theRealObject, 'someProperty'), 'foo', 'should return the set value, not false');
 });
 
-QUnit.module("Ember.getWithDefault");
+QUnit.module('Ember.getWithDefault');
 
-test('should get arbitrary properties on an object', function() {
+QUnit.test('should get arbitrary properties on an object', function() {
   var obj = {
     string: 'string',
     number: 23,
@@ -104,24 +147,25 @@ test('should get arbitrary properties on an object', function() {
     nullValue: null
   };
 
-  for(var key in obj) {
-    if (!obj.hasOwnProperty(key)) continue;
-    equal(getWithDefault(obj, key, "fail"), obj[key], key);
+  for (var key in obj) {
+    if (!obj.hasOwnProperty(key)) {
+      continue;
+    }
+    equal(getWithDefault(obj, key, 'fail'), obj[key], key);
   }
 
   obj = {
     undef: undefined
   };
 
-  equal(getWithDefault(obj, "undef", "default"), "default", "explicit undefined retrieves the default");
-  equal(getWithDefault(obj, "not-present", "default"), "default", "non-present key retrieves the default");
+  equal(getWithDefault(obj, 'undef', 'default'), 'default', 'explicit undefined retrieves the default');
+  equal(getWithDefault(obj, 'not-present', 'default'), 'default', 'non-present key retrieves the default');
 });
 
-test('should call unknownProperty if defined and value is undefined', function() {
-
+QUnit.test('should call unknownProperty if defined and value is undefined', function() {
   var obj = {
     count: 0,
-    unknownProperty: function(key) {
+    unknownProperty(key) {
       equal(key, 'foo', 'should pass key');
       this.count++;
       return 'FOO';
@@ -132,14 +176,14 @@ test('should call unknownProperty if defined and value is undefined', function()
   equal(obj.count, 1, 'should have invoked');
 });
 
-testBoth("if unknownProperty is present, it is called", function(get, set) {
+testBoth('if unknownProperty is present, it is called', function(get, set) {
   var obj = {
     count: 0,
-    unknownProperty: function(key) {
-      if (key === "foo") {
-        equal(key, 'foo', "should pass key");
+    unknownProperty(key) {
+      if (key === 'foo') {
+        equal(key, 'foo', 'should pass key');
         this.count++;
-        return "FOO";
+        return 'FOO';
       }
     }
   };
@@ -149,16 +193,15 @@ testBoth("if unknownProperty is present, it is called", function(get, set) {
     count++;
   });
 
-  equal(getWithDefault(obj, 'foo', "fail"), 'FOO', 'should return value from unknownProperty');
-  equal(getWithDefault(obj, 'bar', "default"), 'default', 'should convert undefined from unknownProperty into default');
+  equal(getWithDefault(obj, 'foo', 'fail'), 'FOO', 'should return value from unknownProperty');
+  equal(getWithDefault(obj, 'bar', 'default'), 'default', 'should convert undefined from unknownProperty into default');
 });
 
 // ..........................................................
 // BUGS
 //
 
-test('(regression) watched properties on unmodified inherited objects should still return their original value', function() {
-
+QUnit.test('(regression) watched properties on unmodified inherited objects should still return their original value', function() {
   var MyMixin = Mixin.create({
     someProperty: 'foo',
     propertyDidChange: observer('someProperty', function() {
@@ -167,8 +210,7 @@ test('(regression) watched properties on unmodified inherited objects should sti
   });
 
   var baseObject = MyMixin.apply({});
-  var theRealObject = create(baseObject);
+  var theRealObject = Object.create(baseObject);
 
-  equal(getWithDefault(theRealObject, 'someProperty', "fail"), 'foo', 'should return the set value, not false');
+  equal(getWithDefault(theRealObject, 'someProperty', 'fail'), 'foo', 'should return the set value, not false');
 });
-

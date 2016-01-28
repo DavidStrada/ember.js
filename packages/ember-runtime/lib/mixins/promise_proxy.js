@@ -1,8 +1,8 @@
-import { get } from "ember-metal/property_get";
-import setProperties from "ember-metal/set_properties";
-import { computed } from "ember-metal/computed";
-import { Mixin } from "ember-metal/mixin";
-import EmberError from "ember-metal/error";
+import { get } from 'ember-metal/property_get';
+import setProperties from 'ember-metal/set_properties';
+import { computed } from 'ember-metal/computed';
+import { Mixin } from 'ember-metal/mixin';
+import EmberError from 'ember-metal/error';
 
 var not = computed.not;
 var or = computed.or;
@@ -10,7 +10,7 @@ var or = computed.or;
 /**
   @module ember
   @submodule ember-runtime
- */
+*/
 
 function tap(proxy, promise) {
   setProperties(proxy, {
@@ -30,48 +30,48 @@ function tap(proxy, promise) {
       isRejected: true
     });
     throw reason;
-  }, "Ember: PromiseProxy");
+  }, 'Ember: PromiseProxy');
 }
 
 /**
-  A low level mixin making ObjectProxy, ObjectController or ArrayController's promise aware.
+  A low level mixin making ObjectProxy promise-aware.
 
   ```javascript
-  var ObjectPromiseController = Ember.ObjectController.extend(Ember.PromiseProxyMixin);
+  var ObjectPromiseProxy = Ember.ObjectProxy.extend(Ember.PromiseProxyMixin);
 
-  var controller = ObjectPromiseController.create({
+  var proxy = ObjectPromiseProxy.create({
     promise: $.getJSON('/some/remote/data.json')
   });
 
-  controller.then(function(json){
+  proxy.then(function(json){
      // the json
   }, function(reason) {
      // the reason why you have no json
   });
   ```
 
-  the controller has bindable attributes which
+  the proxy has bindable attributes which
   track the promises life cycle
 
   ```javascript
-  controller.get('isPending')   //=> true
-  controller.get('isSettled')  //=> false
-  controller.get('isRejected')  //=> false
-  controller.get('isFulfilled') //=> false
+  proxy.get('isPending')   //=> true
+  proxy.get('isSettled')  //=> false
+  proxy.get('isRejected')  //=> false
+  proxy.get('isFulfilled') //=> false
   ```
 
-  When the the $.getJSON completes, and the promise is fulfilled
+  When the $.getJSON completes, and the promise is fulfilled
   with json, the life cycle attributes will update accordingly.
 
   ```javascript
-  controller.get('isPending')   //=> false
-  controller.get('isSettled')   //=> true
-  controller.get('isRejected')  //=> false
-  controller.get('isFulfilled') //=> true
+  proxy.get('isPending')   //=> false
+  proxy.get('isSettled')   //=> true
+  proxy.get('isRejected')  //=> false
+  proxy.get('isFulfilled') //=> true
   ```
 
-  As the controller is an ObjectController, and the json now its content,
-  all the json properties will be available directly from the controller.
+  As the proxy is an ObjectProxy, and the json now its content,
+  all the json properties will be available directly from the proxy.
 
   ```javascript
   // Assuming the following json:
@@ -80,23 +80,13 @@ function tap(proxy, promise) {
     lastName: 'Penner'
   }
 
-  // both properties will accessible on the controller
-  controller.get('firstName') //=> 'Stefan'
-  controller.get('lastName')  //=> 'Penner'
+  // both properties will accessible on the proxy
+  proxy.get('firstName') //=> 'Stefan'
+  proxy.get('lastName')  //=> 'Penner'
   ```
 
-  If the controller is backing a template, the attributes are
-  bindable from within that template
-
-  ```handlebars
-  {{#if isPending}}
-    loading...
-  {{else}}
-    firstName: {{firstName}}
-    lastName: {{lastName}}
-  {{/if}}
-  ```
   @class Ember.PromiseProxyMixin
+  @public
 */
 export default Mixin.create({
   /**
@@ -105,6 +95,7 @@ export default Mixin.create({
 
     @property reason
     @default null
+    @public
   */
   reason:  null,
 
@@ -113,6 +104,7 @@ export default Mixin.create({
 
     @property isPending
     @default true
+    @public
   */
   isPending:  not('isSettled').readOnly(),
 
@@ -121,6 +113,7 @@ export default Mixin.create({
 
     @property isSettled
     @default false
+    @public
   */
   isSettled:  or('isRejected', 'isFulfilled').readOnly(),
 
@@ -129,6 +122,7 @@ export default Mixin.create({
 
     @property isRejected
     @default false
+    @public
   */
   isRejected:  false,
 
@@ -137,6 +131,7 @@ export default Mixin.create({
 
     @property isFulfilled
     @default false
+    @public
   */
   isFulfilled: false,
 
@@ -149,18 +144,20 @@ export default Mixin.create({
     Example:
 
     ```javascript
-    Ember.ObjectController.extend(Ember.PromiseProxyMixin).create({
+    Ember.ObjectProxy.extend(Ember.PromiseProxyMixin).create({
       promise: <thenable>
     });
     ```
 
     @property promise
+    @public
   */
-  promise: computed(function(key, promise) {
-    if (arguments.length === 2) {
+  promise: computed({
+    get() {
+      throw new EmberError('PromiseProxy\'s promise must be set');
+    },
+    set(key, promise) {
       return tap(this, promise);
-    } else {
-      throw new EmberError("PromiseProxy's promise must be set");
     }
   }),
 
@@ -172,6 +169,7 @@ export default Mixin.create({
     @method then
     @param {Function} callback
     @return {RSVP.Promise}
+    @public
   */
   then: promiseAlias('then'),
 
@@ -184,6 +182,7 @@ export default Mixin.create({
     @param {Function} callback
     @return {RSVP.Promise}
     @since 1.3.0
+    @public
   */
   'catch': promiseAlias('catch'),
 
@@ -196,6 +195,7 @@ export default Mixin.create({
     @param {Function} callback
     @return {RSVP.Promise}
     @since 1.3.0
+    @public
   */
   'finally': promiseAlias('finally')
 
@@ -204,6 +204,6 @@ export default Mixin.create({
 function promiseAlias(name) {
   return function () {
     var promise = get(this, 'promise');
-    return promise[name].apply(promise, arguments);
+    return promise[name](...arguments);
   };
 }

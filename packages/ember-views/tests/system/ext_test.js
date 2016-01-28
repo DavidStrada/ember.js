@@ -1,22 +1,34 @@
-import run from "ember-metal/run_loop";
-import View from "ember-views/views/view";
+import run from 'ember-metal/run_loop';
+import View from 'ember-views/views/view';
+import { compile } from 'ember-template-compiler';
 
-QUnit.module("Ember.View additions to run queue");
+import { registerKeyword, resetKeyword } from 'ember-htmlbars/tests/utils';
+import viewKeyword from 'ember-htmlbars/keywords/view';
 
-test("View hierarchy is done rendering to DOM when functions queued in afterRender execute", function() {
+var originalViewKeyword;
+
+QUnit.module('Ember.View additions to run queue', {
+  setup() {
+    originalViewKeyword = registerKeyword('view',  viewKeyword);
+  },
+  teardown() {
+    resetKeyword('view', originalViewKeyword);
+  }
+});
+
+QUnit.test('View hierarchy is done rendering to DOM when functions queued in afterRender execute', function() {
   var didInsert = 0;
   var childView = View.create({
     elementId: 'child_view',
-    didInsertElement: function() {
+    didInsertElement() {
       didInsert++;
     }
   });
   var parentView = View.create({
     elementId: 'parent_view',
-    render: function(buffer) {
-      this.appendChild(childView);
-    },
-    didInsertElement: function() {
+    template: compile('{{view view.childView}}'),
+    childView: childView,
+    didInsertElement() {
       didInsert++;
     }
   });

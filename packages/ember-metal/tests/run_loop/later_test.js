@@ -18,15 +18,27 @@ function wait(callback, maxWaitCount) {
   }, 10);
 }
 
+// Synchronous "sleep". This simulates work being done
+// after run.later was called but before the run loop
+// has flushed. In previous versions, this would have
+// caused the run.later callback to have run from
+// within the run loop flush, since by the time the
+// run loop has to flush, it would have considered
+// the timer already expired.
+function pauseUntil(time) {
+  // jscs:disable
+  while (+new Date() < time) { /* do nothing - sleeping */ }
+  // jscs:enable
+}
+
 QUnit.module('run.later', {
-  teardown: function() {
+  teardown() {
     window.setTimeout = originalSetTimeout;
     Date.prototype.valueOf = originalDateValueOf;
   }
 });
 
 asyncTest('should invoke after specified period of time - function only', function() {
-
   var invoked = false;
 
   run(function() {
@@ -40,8 +52,7 @@ asyncTest('should invoke after specified period of time - function only', functi
 });
 
 asyncTest('should invoke after specified period of time - target/method', function() {
-
-  var obj = { invoked: false } ;
+  var obj = { invoked: false };
 
   run(function() {
     run.later(obj, function() { this.invoked = true; }, 100);
@@ -54,8 +65,7 @@ asyncTest('should invoke after specified period of time - target/method', functi
 });
 
 asyncTest('should invoke after specified period of time - target/method/args', function() {
-
-  var obj = { invoked: 0 } ;
+  var obj = { invoked: 0 };
 
   run(function() {
     run.later(obj, function(amt) { this.invoked += amt; }, 10, 100);
@@ -79,26 +89,18 @@ asyncTest('should always invoke within a separate runloop', function() {
       secondRunLoop = run.currentRunLoop;
     }, 10, 1);
 
-    // Synchronous "sleep". This simulates work being done
-    // after run.later was called but before the run loop
-    // has flushed. In previous versions, this would have
-    // caused the run.later callback to have run from
-    // within the run loop flush, since by the time the
-    // run loop has to flush, it would have considered
-    // the timer already expired.
-    var pauseUntil = +new Date() + 100;
-    while(+new Date() < pauseUntil) { /* do nothing - sleeping */ }
+    pauseUntil(+new Date() + 100);
   });
 
-  ok(firstRunLoop, "first run loop captured");
-  ok(!run.currentRunLoop, "shouldn't be in a run loop after flush");
-  equal(obj.invoked, 0, "shouldn't have invoked later item yet");
+  ok(firstRunLoop, 'first run loop captured');
+  ok(!run.currentRunLoop, 'shouldn\'t be in a run loop after flush');
+  equal(obj.invoked, 0, 'shouldn\'t have invoked later item yet');
 
   wait(function() {
     QUnit.start();
-    equal(obj.invoked, 10, "should have invoked later item");
-    ok(secondRunLoop, "second run loop took place");
-    ok(secondRunLoop !== firstRunLoop, "two different run loops took place");
+    equal(obj.invoked, 10, 'should have invoked later item');
+    ok(secondRunLoop, 'second run loop took place');
+    ok(secondRunLoop !== firstRunLoop, 'two different run loops took place');
   });
 });
 
@@ -162,7 +164,6 @@ asyncTest('should always invoke within a separate runloop', function() {
 // });
 
 asyncTest('inception calls to run.later should run callbacks in separate run loops', function() {
-
   var runLoop, finished;
 
   run(function() {
@@ -189,7 +190,6 @@ asyncTest('inception calls to run.later should run callbacks in separate run loo
 });
 
 asyncTest('setTimeout should never run with a negative wait', function() {
-
   // Rationale: The old run loop code was susceptible to an occasional
   // bug where invokeLaterTimers would be scheduled with a setTimeout
   // with a negative wait. Modern browsers normalize this to 0, but
@@ -208,7 +208,6 @@ asyncTest('setTimeout should never run with a negative wait', function() {
 
   var count = 0;
   run(function() {
-
     run.later(function() {
       count++;
 
@@ -218,8 +217,7 @@ asyncTest('setTimeout should never run with a negative wait', function() {
       // fine that they're not called in this run loop; just need to
       // make sure that invokeLaterTimers doesn't end up scheduling
       // a negative setTimeout.
-      var pauseUntil = +new Date() + 60;
-      while(+new Date() < pauseUntil) { /* do nothing - sleeping */ }
+      pauseUntil(+new Date() + 60);
     }, 1);
 
     run.later(function() {

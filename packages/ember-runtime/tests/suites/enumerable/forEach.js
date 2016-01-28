@@ -1,6 +1,6 @@
 import {SuiteModuleBuilder} from 'ember-runtime/tests/suites/suite';
 import {get} from 'ember-metal/property_get';
-import {guidFor} from "ember-metal/utils";
+import {guidFor} from 'ember-metal/utils';
 
 var suite = SuiteModuleBuilder.create();
 
@@ -19,7 +19,7 @@ suite.test('forEach should iterate over list', function() {
 suite.test('forEach should iterate over list after mutation', function() {
   if (get(this, 'canTestMutation')) {
     expect(0);
-    return ;
+    return;
   }
 
   var obj = this.newObject();
@@ -52,7 +52,6 @@ suite.test('2nd target parameter', function() {
   obj.forEach(function() {
     equal(guidFor(this), guidFor(target), 'should pass target as this if context');
   }, target);
-
 });
 
 
@@ -68,7 +67,6 @@ suite.test('callback params', function() {
     equal(guidFor(enumerable), guidFor(obj), 'enumerable param');
     loc++;
   });
-
 });
 
 export default suite;

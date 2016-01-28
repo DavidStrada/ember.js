@@ -2,12 +2,12 @@
 @module ember
 @submodule ember-runtime
 */
-import Ember from "ember-metal/core"; // Ember.lookup, Ember.assert
 
-import { get } from "ember-metal/property_get";
-import { typeOf } from "ember-metal/utils";
-import { Mixin } from "ember-metal/mixin";
-import { computed } from "ember-metal/computed";
+import Ember from 'ember-metal/core'; // Ember.lookup
+import { assert } from 'ember-metal/debug';
+import { get } from 'ember-metal/property_get';
+import { Mixin } from 'ember-metal/mixin';
+import { computed } from 'ember-metal/computed';
 
 /**
 `Ember.TargetActionSupport` is a mixin that can be included in a class
@@ -22,28 +22,36 @@ view-aware defaults for target and actionContext.
 @class TargetActionSupport
 @namespace Ember
 @extends Ember.Mixin
+@private
 */
 var TargetActionSupport = Mixin.create({
   target: null,
   action: null,
   actionContext: null,
 
-  targetObject: computed(function() {
+  targetObject: computed('target', function() {
+    if (this._targetObject) {
+      return this._targetObject;
+    }
+
     var target = get(this, 'target');
 
-    if (typeOf(target) === "string") {
+    if (typeof target === 'string') {
       var value = get(this, target);
-      if (value === undefined) { value = get(Ember.lookup, target); }
+      if (value === undefined) {
+        value = get(Ember.lookup, target);
+      }
+
       return value;
     } else {
       return target;
     }
-  }).property('target'),
+  }),
 
   actionContextObject: computed(function() {
     var actionContext = get(this, 'actionContext');
 
-    if (typeOf(actionContext) === "string") {
+    if (typeof actionContext === 'string') {
       var value = get(this, actionContext);
       if (value === undefined) { value = get(Ember.lookup, actionContext); }
       return value;
@@ -101,11 +109,11 @@ var TargetActionSupport = Mixin.create({
   ```
 
   @method triggerAction
-  @param opts {Hash} (optional, with the optional keys action, target and/or actionContext)
+  @param opts {Object} (optional, with the optional keys action, target and/or actionContext)
   @return {Boolean} true if the action was sent successfully and did not return false
+  @private
   */
-  triggerAction: function(opts) {
-    opts = opts || {};
+  triggerAction(opts = {}) {
     var action = opts.action || get(this, 'action');
     var target = opts.target || get(this, 'targetObject');
     var actionContext = opts.actionContext;
@@ -127,11 +135,13 @@ var TargetActionSupport = Mixin.create({
       if (target.send) {
         ret = target.send.apply(target, args(actionContext, action));
       } else {
-        Ember.assert("The action '" + action + "' did not exist on " + target, typeof target[action] === 'function');
+        assert('The action \'' + action + '\' did not exist on ' + target, typeof target[action] === 'function');
         ret = target[action].apply(target, args(actionContext));
       }
 
-      if (ret !== false) ret = true;
+      if (ret !== false) {
+        ret = true;
+      }
 
       return ret;
     } else {

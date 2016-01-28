@@ -1,10 +1,10 @@
-/* globals RSVP:true */
-
 import Ember from 'ember-metal/core';
+import require, { has } from 'require';
+import { assert } from 'ember-metal/debug';
 import Logger from 'ember-metal/logger';
-import run from "ember-metal/run_loop";
+import run from 'ember-metal/run_loop';
+import * as RSVP from 'rsvp';
 
-var RSVP = requireModule('rsvp');
 var testModuleName = 'ember-testing/test';
 var Test;
 
@@ -25,27 +25,44 @@ RSVP.configure('async', function(callback, promise) {
 
   if (Ember.testing && async) { asyncStart(); }
 
-  run.backburner.schedule('actions', function(){
+  run.backburner.schedule('actions', function() {
     if (Ember.testing && async) { asyncEnd(); }
     callback(promise);
   });
 });
 
-RSVP.Promise.prototype.fail = function(callback, label){
-  Ember.deprecate('RSVP.Promise.fail has been renamed as RSVP.Promise.catch');
-  return this['catch'](callback, label);
-};
+export function onerrorDefault(reason) {
+  var error;
 
-RSVP.onerrorDefault = function (error) {
-  if (error instanceof Error) {
+  if (reason && reason.errorThrown) {
+    // jqXHR provides this
+    error = reason.errorThrown;
+    if (typeof error === 'string') {
+      error = new Error(error);
+    }
+    Object.defineProperty(error, '__reason_with_error_thrown__', {
+      value: reason,
+      enumerable: false
+    });
+  } else {
+    error = reason;
+  }
+
+  if (error && error.name === "UnrecognizedURLError") {
+    assert("The URL '" + error.message + "' did not match any routes in your application", false);
+    return;
+  }
+
+  if (error && error.name !== 'TransitionAborted') {
     if (Ember.testing) {
       // ES6TODO: remove when possible
-      if (!Test && Ember.__loader.registry[testModuleName]) {
-        Test = requireModule(testModuleName)['default'];
+      if (!Test && has(testModuleName)) {
+        Test = require(testModuleName)['default'];
       }
 
       if (Test && Test.adapter) {
         Test.adapter.exception(error);
+        Logger.error(error.stack);
       } else {
         throw error;
       }
@@ -53,11 +70,15 @@ RSVP.onerrorDefault = function (error) {
       Ember.onerror(error);
     } else {
       Logger.error(error.stack);
-      Ember.assert(error, false);
     }
   }
-};
+}
 
-RSVP.on('error', RSVP.onerrorDefault);
+export function after (cb) {
+  run.schedule(run.queues[run.queues.length - 1], cb);
+}
+
+RSVP.on('error', onerrorDefault);
+RSVP.configure('after', after);
 
 export default RSVP;

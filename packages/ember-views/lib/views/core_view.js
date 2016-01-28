@@ -1,22 +1,29 @@
-import Rerender from "ember-views/system/renderer";
+import { assert, deprecate } from 'ember-metal/debug';
+import { get } from 'ember-metal/property_get';
 
-import {
-  cloneStates,
-  states
-} from "ember-views/views/states";
-import EmberObject from "ember-runtime/system/object";
-import Evented from "ember-runtime/mixins/evented";
-import ActionHandler from "ember-runtime/mixins/action_handler";
+import EmberObject from 'ember-runtime/system/object';
+import Evented from 'ember-runtime/mixins/evented';
+import ActionHandler, { deprecateUnderscoreActions } from 'ember-runtime/mixins/action_handler';
+import { typeOf } from 'ember-runtime/utils';
 
-import { get } from "ember-metal/property_get";
-import { computed } from "ember-metal/computed";
+import Renderer from 'ember-metal-views/renderer';
+import { cloneStates, states } from 'ember-views/views/states';
+import { internal } from 'htmlbars-runtime';
+import require from 'require';
 
-import { typeOf } from "ember-metal/utils";
+function K() { return this; }
+
+// Normally, the renderer is injected by the container when the view is looked
+// up. However, if someone creates a view without looking it up via the
+// container (e.g. `Ember.View.create().append()`) then we create a fallback
+// DOM renderer that is shared. In general, this path should be avoided since
+// views created this way cannot run in a node environment.
+var renderer;
+
 /**
   `Ember.CoreView` is an abstract class that exists to give view-like behavior
-  to both Ember's main view class `Ember.View` and other classes like
-  `Ember._SimpleMetamorphView` that don't need the fully functionaltiy of
-  `Ember.View`.
+  to both Ember's main view class `Ember.View` and other classes that don't need
+  the fully functionaltiy of `Ember.View`.
 
   Unless you have specific needs for `CoreView`, you will use `Ember.View`
   in your applications.
@@ -24,19 +31,32 @@ import { typeOf } from "ember-metal/utils";
   @class CoreView
   @namespace Ember
   @extends Ember.Object
+  @deprecated Use `Ember.View` instead.
   @uses Ember.Evented
   @uses Ember.ActionHandler
+  @private
 */
-var CoreView = EmberObject.extend(Evented, ActionHandler, {
+const CoreView = EmberObject.extend(Evented, ActionHandler, {
   isView: true,
-  isVirtual: false,
 
   _states: cloneStates(states),
 
-  init: function() {
-    this._super();
-    this._transitionTo('preRender');
+  init() {
+    this._super(...arguments);
+    this._state = 'preRender';
+    this._currentState = this._states.preRender;
     this._isVisible = get(this, 'isVisible');
+
+    // Fallback for legacy cases where the view was created directly
+    // via `create()` instead of going through the container.
+    if (!this.renderer) {
+      var DOMHelper = domHelper();
+      renderer = renderer || new Renderer(new DOMHelper());
+      this.renderer = renderer;
+    }
+
+    this._destroyingSubtreeForView = null;
+    this._dispatching = null;
   },
 
   /**
@@ -46,30 +66,15 @@ var CoreView = EmberObject.extend(Evented, ActionHandler, {
     @property parentView
     @type Ember.View
     @default null
+    @private
   */
-  parentView: computed('_parentView', function() {
-    var parent = this._parentView;
-
-    if (parent && parent.isVirtual) {
-      return get(parent, 'parentView');
-    } else {
-      return parent;
-    }
-  }),
+  parentView: null,
 
   _state: null,
 
-  _parentView: null,
-
-  // return the current view, not including virtual views
-  concreteView: computed('parentView', function() {
-    if (!this.isVirtual) { return this; }
-    else { return get(this, 'parentView.concreteView'); }
-  }),
-
   instrumentName: 'core_view',
 
-  instrumentDetails: function(hash) {
+  instrumentDetails(hash) {
     hash.object = this.toString();
     hash.containerKey = this._debugContainerKey;
     hash.view = this;
@@ -83,8 +88,8 @@ var CoreView = EmberObject.extend(Evented, ActionHandler, {
     @param name {String}
     @private
   */
-  trigger: function() {
-    this._super.apply(this, arguments);
+  trigger() {
+    this._super(...arguments);
     var name = arguments[0];
     var method = this[name];
     if (method) {
@@ -97,39 +102,53 @@ var CoreView = EmberObject.extend(Evented, ActionHandler, {
     }
   },
 
-  has: function(name) {
+  has(name) {
     return typeOf(this[name]) === 'function' || this._super(name);
   },
 
-  destroy: function() {
-    var parent = this._parentView;
+  destroy() {
+    if (!this._super(...arguments)) { return; }
 
-    if (!this._super()) { return; }
+    this._currentState.cleanup(this);
 
-
-    // destroy the element -- this will avoid each child view destroying
-    // the element over and over again...
-    if (!this.removedFromDOM && this._renderer) {
-      this._renderer.remove(this, true);
+    // If the destroyingSubtreeForView property is not set but we have an
+    // associated render node, it means this view is being destroyed from user
+    // code and not via a change in the templating layer (like an {{if}}
+    // becoming falsy, for example).  In this case, it is our responsibility to
+    // make sure that any render nodes created as part of the rendering process
+    // are cleaned up.
+    if (!this.ownerView._destroyingSubtreeForView && this._renderNode) {
+      assert('BUG: Render node exists without concomitant env.', this.ownerView.env);
+      internal.clearMorph(this._renderNode, this.ownerView.env, true);
     }
-
-    // remove from parent if found. Don't call removeFromParent,
-    // as removeFromParent will try to remove the element from
-    // the DOM again.
-    if (parent) { parent.removeChild(this); }
-
-    this._transitionTo('destroying', false);
 
     return this;
   },
 
-  clearRenderedChildren: Ember.K,
-  _transitionTo: Ember.K,
-  destroyElement: Ember.K
+  clearRenderedChildren: K,
+  _transitionTo: K,
+  destroyElement: K
 });
 
+deprecateUnderscoreActions(CoreView);
+
 CoreView.reopenClass({
-  renderer: new Rerender()
+  isViewFactory: true
 });
+
+export var DeprecatedCoreView = CoreView.extend({
+  init() {
+    deprecate(
+      'Ember.CoreView is deprecated. Please use Ember.View.',
+      false, { id: 'ember-views.core-view', until: '2.4.0' }
+    );
+    this._super(...arguments);
+  }
+});
+
+var _domHelper;
+function domHelper() {
+  return _domHelper = _domHelper || require('ember-htmlbars/system/dom-helper').default;
+}
 
 export default CoreView;

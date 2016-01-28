@@ -1,20 +1,20 @@
-import EmberObject from "ember-runtime/system/object";
+import EmberObject from 'ember-runtime/system/object';
 
 QUnit.module('strict mode tests');
 
-test('__superWrapper does not throw errors in strict mode', function() {
+QUnit.test('__superWrapper does not throw errors in strict mode', function() {
   var Foo = EmberObject.extend({
-    blah: function() {
+    blah() {
       return 'foo';
     }
   });
 
   var Bar = Foo.extend({
-    blah: function() {
+    blah() {
       return 'bar';
     },
 
-    callBlah: function() {
+    callBlah() {
       var blah = this.blah;
 
       return blah();

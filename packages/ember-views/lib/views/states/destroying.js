@@ -1,26 +1,22 @@
-import merge from "ember-metal/merge";
-import {create} from "ember-metal/platform";
-import {fmt} from "ember-runtime/system/string";
-import _default from "ember-views/views/states/default";
-import EmberError from "ember-metal/error";
+import assign from 'ember-metal/assign';
+import _default from 'ember-views/views/states/default';
+import EmberError from 'ember-metal/error';
 /**
 @module ember
 @submodule ember-views
 */
 
-var destroyingError = "You can't call %@ on a view being destroyed";
+var destroying = Object.create(_default);
 
-var destroying = create(_default);
-
-merge(destroying, {
-  appendChild: function() {
-    throw new EmberError(fmt(destroyingError, ['appendChild']));
+assign(destroying, {
+  appendChild() {
+    throw new EmberError('You can\'t call appendChild on a view being destroyed');
   },
-  rerender: function() {
-    throw new EmberError(fmt(destroyingError, ['rerender']));
+  rerender() {
+    throw new EmberError('You can\'t call rerender on a view being destroyed');
   },
-  destroyElement: function() {
-    throw new EmberError(fmt(destroyingError, ['destroyElement']));
+  destroyElement() {
+    throw new EmberError('You can\'t call destroyElement on a view being destroyed');
   }
 });
 
